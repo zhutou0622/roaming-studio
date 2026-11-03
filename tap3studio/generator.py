@@ -107,6 +107,20 @@ def gprs_call(rng: random.Random, idx: int, start: str, charge: int) -> dict:
     }
 
 
+def _sum_key(obj, key: str) -> int:
+    if isinstance(obj, dict):
+        total = 0
+        for k, v in obj.items():
+            if k == key and isinstance(v, int):
+                total += v
+            else:
+                total += _sum_key(v, key)
+        return total
+    if isinstance(obj, list):
+        return sum(_sum_key(v, key) for v in obj)
+    return 0
+
+
 def build_spec(n_events: int = 6, seed: int = 7, sender: str = "26201",
                recipient: str = "22801", currency: str = "EUR") -> dict:
     rng = random.Random(seed)
@@ -164,7 +178,7 @@ def build_spec(n_events: int = 6, seed: int = 7, sender: str = "26201",
                 "latestCallTimeStamp": {"localTimeStamp": "20240115093300",
                                         "utcTimeOffset": "+0100"},
                 "totalCharge": total,
-                "totalTaxValue": total * 190 // 1000,
+                "totalTaxValue": _sum_key(events, "taxValue"),
                 "totalDiscountValue": 0,
                 "callEventDetailsCount": len(events),
             },

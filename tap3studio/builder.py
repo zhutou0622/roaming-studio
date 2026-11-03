@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 from . import ber
 from .asn1model import Module, Type
 from .tapfile import (AMOUNT_TYPES, BCD_TYPES, HEX_TYPES, NUMERIC_TYPES,
-                      digits_to_bcd, _int_bytes)
+                      digits_to_bcd, semantic_for_name, _int_bytes)
 
 DEFAULT_TEXT = {
     "PlmnId": "26201",
@@ -44,13 +44,13 @@ def _tag_of(t: Type, module: Module):
     return t.effective_tag(module)
 
 
-def _primitive_bytes(prim: str, type_name: str, value) -> bytes:
+def _primitive_bytes(prim: str, type_name: str, value, semantic: str = "") -> bytes:
     if value is None:
         return b""
     if isinstance(value, bytes):
         return value
     s = str(value)
-    if type_name in BCD_TYPES:
+    if semantic == "bcd" or (not semantic and type_name in BCD_TYPES):
         return digits_to_bcd(s)
     if prim == "INTEGER":
         try:
@@ -127,8 +127,9 @@ def _build(module: Module, t: Type, value, display_name: str, depth: int) -> Opt
         node = ber.BerNode(tag_class=cls or "UNIVERSAL",
                            tag_num=num if num is not None else (2 if inner.primitive == "INTEGER" else 4),
                            constructed=False)
-        node.payload = _primitive_bytes(inner.primitive or "OCTET STRING",
-                                        display_name, value)
+        node.payload = _primitive_bytes(
+            inner.primitive or "OCTET STRING", display_name, value,
+            semantic_for_name(module, display_name, inner.primitive or "OCTET STRING"))
     else:
         raise BuildError(f"{display_name}: unsupported type {inner.kind}")
     node.name = display_name

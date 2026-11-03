@@ -31,6 +31,7 @@ class BerNode:
     field_name: str = ""
     type_name: str = ""
     primitive: str = ""
+    semantic: str = ""
     value_text: str = ""
     warnings: List[str] = field(default_factory=list)
     index: int = 0                      # position among siblings

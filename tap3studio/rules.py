@@ -52,6 +52,8 @@ CATALOG = [
     ("AUD-003", "audit", "error", "record count does not match"),
     ("AUD-004", "audit", "error", "totalCharge does not match the record sum"),
     ("AUD-005", "audit", "error", "earliestCallTimeStamp > latestCallTimeStamp"),
+    ("AUD-006", "audit", "warning", "duplicate ChargeDetail lines; totalCharge matches de-duplicated sum"),
+    ("AUD-007", "audit", "error", "totalTaxValue does not match the taxValue sum"),
     ("BCD-001", "syntax", "error", "identifier is not valid BCD"),
 ]
 

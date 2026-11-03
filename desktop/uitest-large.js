@@ -56,6 +56,26 @@ app.whenReady().then(async () => {
        tab: document.querySelector('#dictTab').textContent})`);
     check("large file loaded", stats.main > 20 && stats.nav >= 400, JSON.stringify(stats));
 
+    /* ---------------- BCD / recEntity display ---------------- */
+    const calling = await evalJs(`(async () => {
+      const r = await api('/api/search?q=callingNumber&limit=1');
+      await jumpToNode(r.hits[0].id);
+      const row = document.querySelector('#mainTree .trow.sel');
+      return row ? row.textContent : '';
+    })()`);
+    check("callingNumber is decoded as digits", /callingNumber: \d+/.test(calling), calling.trim());
+
+    await evalJs(`(async () => {
+      const ev = state.nav.children.find(c => c.kind === 'events');
+      await setMainRoot(ev.items[0].id);
+      return true; })()`);
+    const recRow = await evalJs(`(() => {
+      const row = Array.from(state.rows.entries())
+        .find(([id, r]) => r.dataset.name === 'recEntityCode' || r.dataset.type === 'RecEntityCode');
+      return row ? row[1].textContent : '';
+    })()`);
+    check("recEntityCode shows the resolved entity", /\(MSC|SMSC|GGSN|SGSN/.test(recRow), recRow.trim());
+
     /* ---------------- context menu ---------------- */
     await evalJs(`(() => {
       const row = document.querySelector('#mainTree .trow[data-leaf="1"]');

@@ -353,6 +353,11 @@ def generate_rap(req: RapReq):
             "warnings": result["warnings"], "release": rapdoc.release_label}
 
 
+@app.get("/api/rec-entities")
+def rec_entities():
+    return {"entities": _doc().rec_entities()}
+
+
 @app.get("/api/rules")
 def rule_catalog():
     return rules.catalog()

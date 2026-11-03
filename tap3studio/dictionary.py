@@ -215,6 +215,12 @@ VALUES: Dict[str, List[Dict[str, str]]] = {
         ("A", "Acknowledgement"),
         ("C", "Content transaction"),
     ],
+    "RecEntityType": [
+        ("1", "MSC (mobile switching centre)"),
+        ("2", "SGSN"),
+        ("3", "SMSC"),
+        ("4", "GGSN"),
+    ],
     "TaxType": [
         ("01", "VAT"),
         ("02", "Sales tax"),

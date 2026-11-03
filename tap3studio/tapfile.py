@@ -23,7 +23,10 @@ SCHEMA_DIR = resources.resource_path("tap3studio", "schema")
 RELEASES = {1: "TAP3.01", 2: "TAP3.02", 3: "TAP3.03", 4: "TAP3.04", 9: "TAP3.09",
             10: "TAP3.10", 11: "TAP3.11", 12: "TAP3.12"}
 
-BCD_TYPES = {"AddressStringDigits", "Imei", "Imsi", "Msisdn", "BcdString"}
+BCD_TYPES = {"AddressStringDigits", "Imei", "Imsi", "Msisdn", "BcdString", "BCDString"}
+# names that are BCD even when they appear as the outer alias of a field
+BCD_ALIASES = {"CallingNumber", "CalledNumber", "ThirdPartyNumber",
+               "CamelDestinationNumber", "NonChargedPartyNumber"}
 NUMERIC_TYPES = {"NumberString", "LocalTimeStamp", "FileSequenceNumber", "RapFileSequenceNumber",
                  "ChargeType", "TaxRate", "Min", "Mdn", "Esn", "Bid", "PlmnId",
                  "NetworkId", "Iac", "CountryCode", "CalledCountryCode", "UtcTimeOffset",
@@ -592,6 +595,27 @@ class Tap3Document:
         return {"id": new.node_id, "path": new.path(), "name": new.name,
                 "type": new.type_name, "modified": True}
 
+    REC_ENTITY_TYPES = {1: "MSC", 2: "SGSN", 3: "SMSC", 4: "GGSN"}
+
+    def rec_entities(self) -> Dict[str, dict]:
+        """Map recEntityCode -> {type, typeLabel, id} from NetworkInfo."""
+        out: Dict[str, dict] = {}
+        for node in self.nodes.values():
+            if node.type_name != "RecEntityInformation":
+                continue
+            code = type_id = ent_id = ""
+            for child in node.children:
+                if child.name == "recEntityCode":
+                    code = child.value_text
+                elif child.name == "recEntityType":
+                    type_id = _int_value(child)
+                elif child.name == "recEntityId":
+                    ent_id = child.value_text
+            if code:
+                label = self.REC_ENTITY_TYPES.get(type_id, f"type {type_id}" if type_id else "")
+                out[code] = {"type": type_id, "typeLabel": label, "id": ent_id}
+        return out
+
     def find_by_path(self, path: str) -> Optional[ber.BerNode]:
         for n in self.nodes.values():
             if n.path() == path:
@@ -902,15 +926,46 @@ def _primitive_semantic(type_name: str) -> str:
     return "text"
 
 
+def _chain_names(t: Optional[Type], module: Module) -> List[str]:
+    names: List[str] = []
+    seen = 0
+    while t is not None and seen < 32:
+        if t.def_name:
+            names.append(t.def_name)
+        if t.kind == "tagged":
+            t = t.inner
+        elif t.kind == "alias":
+            t = module.types.get(t.name)
+        else:
+            break
+        seen += 1
+    return names
+
+
+def _semantic_for(chain: List[str], primitive: str) -> str:
+    for name in chain:
+        if name in BCD_TYPES or name in BCD_ALIASES:
+            return "bcd"
+    for name in chain:
+        if name in HEX_TYPES:
+            return "hex"
+    if primitive == "INTEGER":
+        return "int"
+    for name in chain:
+        if name in NUMERIC_TYPES:
+            return "num"
+    return "text"
+
+
 def _value_text(node: ber.BerNode) -> str:
     if node.constructed:
         return ""
+    sem = node.semantic or _primitive_semantic(node.type_name)
     is_int = node.primitive == "INTEGER" or node.type_name in AMOUNT_TYPES
     if is_int:
         return str(int.from_bytes(node.payload, "big")) if node.payload else "0"
     if not node.payload:
         return ""
-    sem = _primitive_semantic(node.type_name)
     try:
         if sem == "bcd":
             return bcd_to_digits(node.payload)
@@ -919,8 +974,17 @@ def _value_text(node: ber.BerNode) -> str:
         return node.payload.hex(" ").upper()
 
 
+def semantic_for_name(module: Module, type_name: str,
+                      primitive: str = "OCTET STRING") -> str:
+    t = module.types.get(type_name) if module is not None else None
+    if t is None:
+        return _semantic_for([type_name], primitive)
+    chain = ([type_name] if type_name else []) + _chain_names(t, module)
+    return _semantic_for(chain, primitive)
+
+
 def encode_value(node: ber.BerNode, value: str, mode: str = "auto") -> bytes:
-    sem = _primitive_semantic(node.type_name)
+    sem = node.semantic or _primitive_semantic(node.type_name)
     if mode == "hex":
         return bytes.fromhex(value.replace(" ", ""))
     numeric = node.primitive == "INTEGER" or node.type_name in ("INTEGER", "Code", "PercentageRate")         or node.type_name in AMOUNT_TYPES
@@ -948,6 +1012,7 @@ def reset_annotation(node: ber.BerNode) -> None:
         n.field_name = ""
         n.type_name = ""
         n.primitive = ""
+        n.semantic = ""
         n.value_text = ""
         n.warnings = []
         n.repeated = False
@@ -993,6 +1058,9 @@ def _annotate_inner(node: ber.BerNode, inner: Optional[Type], module: Module,
     if base.kind == "primitive":
         node.type_name = declared or inner_name or base.primitive
         node.primitive = base.primitive
+        chain = ([declared] if declared else []) + _chain_names(
+            inner if inner is not None else base, module)
+        node.semantic = _semantic_for(chain, base.primitive)
         if not node.constructed:
             node.value_text = _value_text(node)
         return 0

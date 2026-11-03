@@ -296,6 +296,9 @@ function buildToolbar() {
 async function loadNav() {
   state.nav = await api("/api/nav");
   try {
+    state.recEntities = (await api("/api/rec-entities")).entities || {};
+  } catch (_e) { state.recEntities = {}; }
+  try {
     state.modifiedCount = (await api("/api/modified")).count;
   } catch (_e) { state.modifiedCount = 0; }
   state.header = state.nav.header;
@@ -527,6 +530,7 @@ function buildNode(node, depth, expandDepth) {
   row.dataset.id = node.id;
   if (node.name) row.dataset.name = node.name;
   row.dataset.leaf = node.constructed ? "0" : "1";
+  if (node.type) row.dataset.type = node.type;
   if (node.modified) row.classList.add("modified");
   row.style.paddingLeft = (2 + depth * 13) + "px";
 
@@ -551,6 +555,14 @@ function buildNode(node, depth, expandDepth) {
     s.className = "fvalue";
     s.textContent = " " + label.scale;
     row.appendChild(s);
+  }
+  const entity = state.recEntities && state.recEntities[node.value];
+  if (entity && (node.name === "recEntityCode" || node.type === "RecEntityCode")) {
+    const e = entity;
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = `  (${e.typeLabel}${e.type ? " " + e.type : ""}${e.id ? ", " + e.id : ""})`;
+    row.appendChild(hint);
   }
   if (state.prefs.showTags) {
     const t = document.createElement("span");

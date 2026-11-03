@@ -24,7 +24,7 @@ from .tapfile import AMOUNT_TYPES, Finding, Tap3Document, _int_value
 
 REQUIRED_BCI = ["sender", "recipient", "fileSequenceNumber", "fileCreationTimeStamp",
                 "transferCutOffTimeStamp", "fileAvailableTimeStamp",
-                "specificationVersionNumber", "releaseVersionNumber", "fileTypeIndicator"]
+                "specificationVersionNumber", "releaseVersionNumber"]
 REQUIRED_ACI = ["totalCharge", "totalTaxValue", "totalDiscountValue", "callEventDetailsCount"]
 REQUIRED_ACC = ["localCurrency", "tapDecimalPlaces"]
 VALID_TIME = re.compile(r"^\d{14}$")
@@ -78,6 +78,38 @@ def _timecheck(name: str, node: Optional[ber.BerNode], out: List[Finding], path:
                                f"{name}: utcTimeOffset '{offset.value_text}' is not +/-hhmm", path))
     elif not VALID_TIME.match(node.value_text or ""):
         out.append(Finding("error", "TS-002", f"{name}: '{node.value_text}' is not CCYYMMDDhhmmss", path))
+
+
+def _charge_detail_entries(ev: ber.BerNode) -> List[dict]:
+    entries = []
+    for cd in _nodes_named(ev, "ChargeDetail"):
+        item = {"charge": None, "units": None, "charged": None, "type": None}
+        for child in cd.children:
+            if child.name in ("charge", "chargeableUnits", "chargedUnits", "chargeType"):
+                item[{"charge": "charge", "chargeableUnits": "units",
+                      "chargedUnits": "charged", "chargeType": "type"}[child.name]] = child.value_text
+        entries.append(item)
+    return entries
+
+
+def _unique_charge(ev: ber.BerNode) -> int:
+    total, seen = 0, set()
+    for item in _charge_detail_entries(ev):
+        key = (item["charge"], item["units"], item["charged"])
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            total += int(item["charge"] or 0)
+        except ValueError:
+            pass
+    return total
+
+
+def _charge_detail_duplicates(ev: ber.BerNode) -> bool:
+    entries = _charge_detail_entries(ev)
+    keys = [(i["charge"], i["units"], i["charged"]) for i in entries]
+    return len(keys) != len(set(keys))
 
 
 def _amount_scaled(v: Optional[int], dp: Optional[int]) -> str:
@@ -172,6 +204,9 @@ def validate(doc: Tap3Document, profile: Optional[dict] = None) -> dict:
         out.append(Finding("error", "EVT-001", "callEventDetails is empty or missing", doc.root.path()))
     seen = set()
     total_charge = 0
+    total_unique_charge = 0
+    duplicate_charge_events = 0
+    total_tax = 0
     for idx, ev in enumerate(events):
         et = ev.name or "unknown"
         if et not in EVENT_REQUIRED and not et.startswith("item"):
@@ -206,6 +241,13 @@ def validate(doc: Tap3Document, profile: Optional[dict] = None) -> dict:
                 out.append(Finding("error", "EVT-007", f"{et}: negative charge {v}", c.path(), idx))
             ev_charge += v
         total_charge += ev_charge
+        total_unique_charge += _unique_charge(ev)
+        if _charge_detail_duplicates(ev):
+            duplicate_charge_events += 1
+        for tax in _nodes_named(ev, "taxValue"):
+            v = _int_value(tax)
+            if v is not None:
+                total_tax += v
         if not charges:
             out.append(Finding("warning", "EVT-008", f"{et}: no charge information", ev.path(), idx))
         # duplicate detection
@@ -248,10 +290,31 @@ def validate(doc: Tap3Document, profile: Optional[dict] = None) -> dict:
         if tc is not None:
             claimed = _int_value(tc)
             if claimed is not None and abs(claimed - total_charge) > charge_tolerance:
-                out.append(Finding("error", "AUD-004",
-                                   f"totalCharge {_amount_scaled(claimed, dp)} != sum of record charges "
-                                   f"{_amount_scaled(total_charge, dp)} (difference "
-                                   f"{_amount_scaled(claimed - total_charge, dp)})", tc.path()))
+                if (duplicate_charge_events
+                        and abs(claimed - total_unique_charge) <= charge_tolerance
+                        and total_unique_charge != total_charge):
+                    out.append(Finding(
+                        "warning", "AUD-006",
+                        f"totalCharge {_amount_scaled(claimed, dp)} matches the de-duplicated "
+                        f"ChargeDetail values; {duplicate_charge_events} event(s) contain duplicate "
+                        f"charge detail lines with identical amount/units (different chargeType). "
+                        f"Tax is reported separately in totalTaxValue.",
+                        tc.path()))
+                else:
+                    out.append(Finding("error", "AUD-004",
+                                       f"totalCharge {_amount_scaled(claimed, dp)} != sum of record "
+                                       f"charges {_amount_scaled(total_charge, dp)} (difference "
+                                       f"{_amount_scaled(claimed - total_charge, dp)}; "
+                                       f"de-duplicated sum {_amount_scaled(total_unique_charge, dp)}; "
+                                       f"tax is separate)", tc.path()))
+        tax_node = _child(audit, "totalTaxValue")
+        if tax_node is not None:
+            claimed_tax = _int_value(tax_node)
+            if claimed_tax is not None and abs(claimed_tax - total_tax) > charge_tolerance:
+                out.append(Finding("error", "AUD-007",
+                                   f"totalTaxValue {_amount_scaled(claimed_tax, dp)} != sum of taxValue "
+                                   f"{_amount_scaled(total_tax, dp)} (difference "
+                                   f"{_amount_scaled(claimed_tax - total_tax, dp)})", tax_node.path()))
         earliest = _child(audit, "earliestCallTimeStamp")
         latest = _child(audit, "latestCallTimeStamp")
         if earliest is not None and latest is not None:

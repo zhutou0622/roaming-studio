@@ -195,7 +195,7 @@ TapStudio/
 
 | 组 | 代码 | 示例 |
 | --- | --- | --- |
-| 结构 | `TAP-001..008` | batchControlInfo 缺失、必填项缺失、fileSequenceNumber 非 5 位、release 越界、schema 未映射元素 |
+| 结构 | `TAP-001..008` | batchControlInfo 缺失、必填项缺失（`fileTypeIndicator` 按 TD.57 为可选）、fileSequenceNumber 非 5 位、release 越界、schema 未映射元素 |
 | 账务 | `ACC-001..003` | accountingInfo / localCurrency / tapDecimalPlaces 缺失、dp 越界 |
 | 网络 | `NET-001..003` | utcTimeOffsetInfo 缺失、偏移格式错误、引用未声明的 utcTimeOffsetCode |
 | 事件 | `EVT-001..009` | 事件为空、未知类型、MO/MT/GPRS 必填组缺失、时长异常、负金额、无计费信息、疑似重复 |
