@@ -176,13 +176,14 @@ def _parse_type(body: str) -> Type:
 
 def parse_module(text: str, name: str = "TAP3") -> Module:
     text = _strip_comments(text)
-    # drop module header (X DEFINITIONS ... BEGIN) and trailing END
-    begin = text.upper().find("BEGIN")
-    if begin >= 0:
-        text = text[begin + 5:]
-    end = text.upper().rfind("END")
-    if end > 0:
-        text = text[:end]
+    # drop the module header (X DEFINITIONS ... BEGIN) when it is present;
+    # some published modules comment the BEGIN/END markers out
+    match = re.search(r"BEGIN", text)
+    if match:
+        text = text[match.end():]
+    text = text.strip()
+    if re.search(r"END\s*$", text):
+        text = re.sub(r"END\s*$", "", text)
     starts = list(_RE_DEF_START.finditer(text))
     types: Dict[str, Type] = {}
     for i, m in enumerate(starts):

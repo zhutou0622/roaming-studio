@@ -98,6 +98,8 @@ npm run dist    :: NSIS 安装包 + 便携版 exe（release/）
 - 编辑值后仍停留在当前话单树（不会把根切到该字段）；被修改字段以浅黄底标记，状态栏显示 `modified: N`，`View → Clear Modification Marks` 清除。
 - `Ctrl+Home` / `Ctrl+End`（或工具栏 `Last`）直接跳到第一条/最后一条话单，左树会自动补齐分块并滚动到对应 CED。
 - `Configure → Validation Profile...` 可逐条设置 severity / off、时长阈值、金额容差与重复检测；校验对话框会显示 profile 名称与被抑制条数。
+- `File → Import Listing...` 从 Roaming Studio 导出的 listing 文本重建 TAP3 骨架；`File → Batch Scan Folder...` 可选目录、Excel 导出、双击打开结果。
+- `Validations → Generate RAP Return File...` 把校验结果写成 RAP1.05 返回文件：无效话单 → `SevereReturn`，文件级问题 → `FatalReturn`，并生成 `RapAuditControlInfo`。
 - 选中 `accountingInfo`、`networkInfo`、`batchControlInfo`、`auditControlInfo` 等批次分组时，中间树会一次展开该分组内的全部列表（`taxation → [1] Taxation → taxCode/taxType/taxRate` 等）；`callEventDetails`（3,883 条）与文档根节点保持浅层，避免一次渲染上万行。
 - 打包默认使用 onedir 后端（`resources/backend/onedir/`），实测后端就绪 0.85s、整包冒烟 3.8s；onefile 备选约 19s。
 - 窗口在 `ready-to-show` 后才显示，避免白屏。

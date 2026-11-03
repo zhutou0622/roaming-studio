@@ -105,6 +105,8 @@ const MENUS = [
     { sep: true },
     { label: "Save", accel: "Ctrl+S", cmd: "save" },
     { label: "Save As...", cmd: "saveAs" },
+    { label: "Import Listing...", cmd: "importListing" },
+    { label: "Batch Scan Folder...", cmd: "batchScan" },
     { label: "Export", submenu: [
       { label: "Records as CSV...", cmd: "export:csv" },
       { label: "Structure as JSON...", cmd: "export:json" },
@@ -146,6 +148,7 @@ const MENUS = [
     { label: "Validate All", accel: "F5", cmd: "validate" },
     { label: "Validate Current Node", cmd: "validateNode" },
     { label: "File Statistics...", cmd: "statistics" },
+    { label: "Generate RAP Return File...", cmd: "genRap" },
     { sep: true },
     { label: "Validation Rules...", cmd: "rules" },
   ] },
@@ -810,6 +813,9 @@ async function runCommand(cmd) {
       case "validateNode": return await cmdValidate("node");
       case "rules": return cmdRules();
       case "profile": return await cmdProfileEditor();
+      case "genRap": return await cmdGenerateRap();
+      case "batchScan": return await cmdBatchScan();
+      case "importListing": return await cmdImportListing();
       case "prefs": return cmdPrefs();
       case "about": return cmdAbout();
       case "aboutDict": return alertBox("Data Dictionary Source",
@@ -1216,6 +1222,11 @@ async function cmdStatistics() {
 async function cmdValidate(scope) {
   if (!state.open) { alertBox("Validation", "Open a file first."); return; }
   const r = await api("/api/validate", "POST", { profile: state.profile });
+  if (r.skipped) {
+    alertBox("Validation", r.reason || "Validation is not available for this file type.");
+    status("Validation skipped: " + (r.reason || "not a TAP3 file"));
+    return;
+  }
   const box = el("div", "flexcol");
   const prof = r.profile ? `   profile: ${r.profile}` : "";
   const suppressed = r.suppressed ? `   suppressed: ${r.suppressed}` : "";
@@ -1379,6 +1390,223 @@ async function cmdProfileEditor() {
           status("Validation profile reset to defaults");
         } },
       { label: "Cancel" },
+    ],
+  });
+}
+
+async function cmdImportListing() {
+  const box = el("div", "flexcol");
+  box.appendChild(el("div", "muted",
+    "Rebuilds a schema-valid TAP3.11 skeleton from a listing file written by " +
+    "Roaming Studio (File → Export → Listing)."));
+  const srow = el("div", "row");
+  srow.appendChild(el("label", "", "Listing:"));
+  const src = el("input");
+  src.type = "text";
+  srow.appendChild(src);
+  if (window.tap3desktop && window.tap3desktop.pickFile) {
+    const b = el("button", "", "Browse...");
+    b.onclick = async () => {
+      const f = await window.tap3desktop.pickFile({
+        title: "Select a listing file",
+        filters: [{ name: "Listing", extensions: ["lis", "txt", "csv"] },
+                  { name: "All files", extensions: ["*"] }],
+      });
+      if (f) src.value = f;
+    };
+    srow.appendChild(b);
+  }
+  box.appendChild(srow);
+  const orow = el("div", "row");
+  orow.appendChild(el("label", "", "Output:"));
+  const out = el("input");
+  out.type = "text";
+  out.placeholder = "imported.tap3";
+  orow.appendChild(out);
+  box.appendChild(orow);
+  const log = el("div", "muted", "");
+  box.appendChild(log);
+  dialog({
+    title: "Import Listing", width: 680, content: box,
+    buttons: [
+      { label: "Import", primary: true, onClick: async () => {
+          try {
+            const r = await api("/api/import-listing", "POST",
+              { path: src.value, out: out.value || "imported.tap3" });
+            state.path = r.path;
+            setTitle();
+            await refreshAll();
+            status(`Imported ${r.events} event(s) from listing → ${r.path}`);
+            log.textContent = `Written ${r.path} (${r.size} bytes)`;
+            alertBox("Listing imported", `${r.events} event(s)
+${r.path}`);
+          } catch (err) {
+            alertBox("Import Listing", String(err.message || err));
+          }
+        }, keepOpen: true },
+      { label: "Close" },
+    ],
+  });
+}
+
+async function cmdBatchScan() {
+  const box = el("div", "flexcol");
+  const frow = el("div", "row");
+  frow.appendChild(el("label", "", "Folder:"));
+  const folder = el("input");
+  folder.type = "text";
+  folder.placeholder = "D:\tap_in";
+  frow.appendChild(folder);
+  if (window.tap3desktop && window.tap3desktop.pickDirectory) {
+    const browse = el("button", "", "Browse...");
+    browse.onclick = async () => {
+      const dir = await window.tap3desktop.pickDirectory();
+      if (dir) folder.value = dir;
+    };
+    frow.appendChild(browse);
+  }
+  box.appendChild(frow);
+
+  const prow = el("div", "row");
+  prow.appendChild(el("label", "", "Pattern:"));
+  const pattern = el("input");
+  pattern.type = "text";
+  pattern.value = "*";
+  prow.appendChild(pattern);
+  const useProfile = el("input");
+  useProfile.type = "checkbox";
+  useProfile.checked = !!state.profile;
+  prow.appendChild(useProfile);
+  prow.appendChild(el("label", "", "Use validation profile"));
+  box.appendChild(prow);
+
+  const outRow = el("div", "row");
+  outRow.appendChild(el("label", "", "Export to:"));
+  const outPath = el("input");
+  outPath.type = "text";
+  outPath.placeholder = "scan_report.xlsx";
+  outRow.appendChild(outPath);
+  box.appendChild(outRow);
+
+  const summary = el("div", "muted", "Choose a folder and press Scan.");
+  box.appendChild(summary);
+  const wrap = el("div", "dlg-table");
+  wrap.style.maxHeight = "340px";
+  box.appendChild(wrap);
+  let lastRows = [];
+
+  const params = () => ({ paths: [folder.value || "."], pattern: pattern.value || "*",
+                          profile: useProfile.checked ? state.profile : null });
+  const scan = async () => {
+    wrap.innerHTML = "";
+    summary.textContent = "Scanning...";
+    const res = await api("/api/batch", "POST", params());
+    lastRows = res.rows || [];
+    const s = res.summary || {};
+    summary.textContent = `${s.files} file(s)   ok: ${s.ok}   errors: ${s.with_errors}   ` +
+      `failed: ${s.failed}   skipped: ${s.skipped || 0}   records: ${s.records}`;
+    const t = el("table");
+    const head = el("tr");
+    ["File", "Release", "Records", "Errors", "Warn", "Status"]
+      .forEach((h, i) => head.appendChild(el("th", i >= 2 && i <= 4 ? "num" : "", h)));
+    t.appendChild(head);
+    lastRows.forEach((row) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", "", row.file));
+      tr.appendChild(el("td", "", row.release));
+      tr.appendChild(el("td", "num", String(row.records)));
+      tr.appendChild(el("td", "num", String(row.errors)));
+      tr.appendChild(el("td", "num", String(row.warnings)));
+      tr.appendChild(el("td", "", row.status));
+      tr.title = row.path + (row.message ? "\n" + row.message : "");
+      tr.ondblclick = async () => {
+        await api("/api/open", "POST", { path: row.path });
+        closeModal();
+        await refreshAll();
+        status("Opened " + row.path);
+      };
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+  };
+
+  dialog({
+    title: "Batch Scan", width: 900, content: box,
+    buttons: [
+      { label: "Scan", primary: true, onClick: scan, keepOpen: true },
+      { label: "Export CSV", onClick: async () => {
+          if (!lastRows.length) { alertBox("Batch Scan", "Scan a folder first."); return false; }
+          const out = outPath.value || "scan_report.csv";
+          const r = await api("/api/batch/export", "POST",
+            Object.assign(params(), { out, fmt: "csv" }));
+          summary.textContent = `CSV written: ${r.path} (${r.files} files)`;
+        }, keepOpen: true },
+      { label: "Export Excel", onClick: async () => {
+          if (!lastRows.length) { alertBox("Batch Scan", "Scan a folder first."); return false; }
+          const out = outPath.value || "scan_report.xlsx";
+          const r = await api("/api/batch/export", "POST",
+            Object.assign(params(), { out, fmt: "xlsx" }));
+          summary.textContent = `Excel written: ${r.path} (${r.files} files)`;
+        }, keepOpen: true },
+      { label: "Close" },
+    ],
+  });
+}
+
+async function cmdGenerateRap() {
+  if (!state.open) { alertBox("RAP", "Open a TAP3 file first."); return; }
+  if (state.kind && state.kind !== "tap3") {
+    alertBox("RAP", "RAP return files can only be generated from TAP3 files.");
+    return;
+  }
+  let base = (state.header && state.header.file) || "return";
+  if (state.path) {
+    const dot = state.path.lastIndexOf(".");
+    base = dot > state.path.lastIndexOf("/") && dot > state.path.lastIndexOf("\\")
+      ? state.path.slice(0, dot) : state.path;
+  }
+  const box = el("div", "flexcol");
+  box.appendChild(el("div", "muted",
+    "Builds a RAP1.05 ReturnBatch from the current validation findings: " +
+    "invalid records become SevereReturn, file-level problems become FatalReturn."));
+  const row = el("div", "row");
+  row.appendChild(el("label", "", "Output:"));
+  const out = el("input");
+  out.type = "text";
+  out.value = base + "_RAP.rap";
+  row.appendChild(out);
+  box.appendChild(row);
+  const wrow = el("div", "row");
+  const inc = el("input");
+  inc.type = "checkbox";
+  inc.checked = true;
+  wrow.appendChild(inc);
+  wrow.appendChild(el("label", "", "Include warnings (otherwise errors only)"));
+  box.appendChild(wrow);
+  const log = el("div", "muted", "");
+  box.appendChild(log);
+  dialog({
+    title: "Generate RAP Return File", width: 640, content: box,
+    buttons: [
+      { label: "Generate", primary: true, onClick: async () => {
+          try {
+            const r = await api("/api/rap", "POST",
+              { out: out.value, include_warnings: inc.checked, profile: state.profile });
+            log.textContent = `${r.release}: ${r.details} return detail(s), ` +
+                              `${r.returned} finding(s) -> ${r.path}`;
+            status(`RAP written: ${r.path}`);
+            alertBox("RAP generated",
+              `${r.release}
+Return details: ${r.details}
+` +
+              `Findings returned: ${r.returned}
+
+${r.path}`);
+          } catch (err) {
+            alertBox("RAP", String(err.message || err));
+          }
+        }, keepOpen: true },
+      { label: "Close" },
     ],
   });
 }

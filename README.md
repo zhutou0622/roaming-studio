@@ -40,13 +40,13 @@ the target machine), a local REST API and a CLI.
 
 | 领域 | 能力 |
 | --- | --- |
-| 解析 | TD.57 ASN.1 模块驱动（TAP3.09 / TAP3.11）；TAP3 release 1–12 文件识别；BER 定长/不定长、CHOICE 线上形态、BCD/数字串/HexString/INTEGER 值语义 |
+| 解析 | 随包 15 个 ASN.1 模块：TAP3.01–3.12、RAP1.01–1.05、NRTRDE 2.1；按 release 自动选模块；BER 定长/不定长、CHOICE 线上形态、BCD/数字串/HexString/INTEGER 值语义 |
 | 浏览 | `DataInterChange → transferBatch → batchControlInfo / accountingInfo / networkInfo / messageDescriptionInfo / callEventDetails / auditControlInfo` 导航；ASN.1 树按需展开；选中分组自动全展开 |
-| 数据字典 | 描述 / Derivation / Conditionality / Values 码表 / Validations 表 / ASN.1 Definition / Parent Types，随节点切换 |
+| 数据字典 | 描述 / Derivation / Conditionality / Values 码表 / Validations 表 / ASN.1 Definition / Parent Types，随节点切换；TAP / RAP / NRTRDE 类型均可查询 |
 | 编辑 | 值编辑、HEX 写入、克隆、删除；**schema 驱动插入子/兄弟节点**（按 SEQUENCE 字段顺序落位、拒绝重复字段）；修改字段浅黄高亮；保持当前话单视图；`Ctrl+S` 原地覆盖、不改文件名 |
 | 校验 | 结构、账务、网络、事件、时间戳、审计勾稽、BCD 语法、重复记录；报告可点击定位；**规则配置化**（逐条 severity/off、时长阈值、金额容差、重复检测开关） |
 | 统计 | 按事件类型统计条数/金额/时长，并与 `AuditControlInfo.totalCharge` 勾稽 |
-| 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出；**批量目录巡检**（CSV / Excel 汇总） |
+| 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出；**Listing 导入**（自有格式）；**批量目录巡检**（CLI + UI，CSV / Excel 汇总）；**校验失败生成 RAP1.05 返回文件**（SevereReturn / FatalReturn） |
 | 导航 | `Ctrl+Home` / `Ctrl+End` 直达首/末话单；`Go to Call…` 按序号跳转 |
 | 性能 | 168,605 节点 / 3,883 记录：打开 1.2 s、切换话单 8 ms、校验 0.27 s |
 | 交付形态 | Electron 桌面版（Windows，内置后端，无需 Python）、浏览器模式、CLI |
@@ -118,6 +118,8 @@ python -m tap3studio.cli merge a.tap3 b.tap3 --out merged.tap3
 python -m tap3studio.cli split samples\demo.tap3 --prefix part_ --chunk 100
 python -m tap3studio.cli export samples\demo.tap3 --fmt csv --out records.csv
 python -m tap3studio.cli batch "D:	ap_in" --pattern "*.tap3" --csv scan.csv --xlsx scan.xlsx
+python -m tap3studio.cli rap samples\demo.tap3 --out return_RAP.rap --errors-only
+python -m tap3studio.cli import-listing records.lis --out imported.tap3
 python -m tap3studio.cli validate file.tap3 --profile profiles/operator-a.json
 ```
 
@@ -129,9 +131,9 @@ python -m tap3studio.cli validate file.tap3 --profile profiles/operator-a.json
 
 | 文件 | 状态 |
 | --- | --- |
-| TAP3（release 1–4、9–12） | ✅ 结构化浏览/编辑/校验；TAP3.09 与 TAP3.11 ASN.1 模块随包提供 |
-| RAP1（release 1–4） | ⚠️ 以通用 TLV 树打开（可编辑/搜索/HEX），专用 schema 见路线图 |
-| NRTRDE1 release 2 | ⚠️ 同上，通用 TLV 树 |
+| TAP3（release 1–4、9–12） | ✅ 结构化浏览/编辑/校验；TAP3.01–3.12 模块随包，按 release 自动选择 |
+| RAP1（release 1–5） | ✅ 专用 schema：结构化浏览/编辑/字典；校验规则暂只针对 TAP3（批量巡检中标记 SKIPPED） |
+| NRTRDE 2.1 | ✅ 专用 schema：结构化浏览/编辑/字典；同样暂不做字段级校验 |
 | Listing（自有格式） | ✅ 导出；导入按记录属性重建骨架 |
 | Tap3Info XML / CSV / JSON | ✅ 导出 |
 
@@ -155,7 +157,7 @@ TapStudio/
 │  ├─ validate.py            # 校验规则引擎
 │  ├─ ops.py                 # 合并 / 拆分 / Listing 导入
 │  ├─ server.py              # FastAPI REST + 静态前端
-│  └─ schema/                # TAP0311.asn、TAP0309.asn
+│  └─ schema/                # TAP0301–0312、RAP0101–0105、NRT0201（15 个 ASN.1 模块）
 ├─ web/                      # 经典 Win32 风格前端（无构建步骤）
 ├─ desktop/                  # Electron 外壳（main / backend / preload / tests）
 ├─ tests/                    # 29 个单元与性能回归测试
@@ -219,6 +221,9 @@ CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
 | POST | `/api/save` | 按给定路径原地覆盖（不改名、不补扩展名） |
 | GET/POST | `/api/validate` | 全量校验（POST 可带 `profile`） |
 | GET | `/api/rules` | 规则目录、默认严重级别与阈值 |
+| POST | `/api/import-listing` | 从 Listing 文本重建 TAP3 骨架 |
+| POST | `/api/batch` / `/api/batch/export` | 批量巡检 / 导出 CSV 或 Excel |
+| POST | `/api/rap` | 由校验结果生成 RAP1.05 返回文件 |
 | GET | `/api/statistics` | 按类型统计 + 审计勾稽 |
 | GET | `/api/dictionary?type=&field=` | TD.57 词条 |
 | GET | `/api/events` / `/api/hex` / `/api/search` | 记录表 / 字节 / 搜索 |
@@ -232,7 +237,7 @@ CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
 ## 测试
 
 ```bat
-python -m unittest discover -s tests -v          :: 42 项（含大文件性能/保存命名/插入/规则配置/批量巡检）
+python -m unittest discover -s tests -v          :: 57 项（含大文件性能/保存命名/插入/规则配置/批量巡检/多 schema/RAP/Listing）
 python -m tap3studio.cli validate samples\demo.tap3
 
 cd desktop
@@ -249,10 +254,12 @@ CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在 push / PR 时运
 ## 路线图
 
 - [x] 插入子/兄弟节点向导（`/api/insert/options` + `/api/insert`，按 SEQUENCE 顺序落位并拒绝重复字段）
-- [ ] RAP1 / TAP3.12 专用 schema；校验失败自动生成 RAP 返回文件
-- [ ] 原生 TAP3 Listing 列位解析（运营商 `.lis`）
+- [x] TAP3.01–3.12 / RAP1.01–1.05 / NRTRDE 2.1 专用 schema（按 release 自动选模块、字典可查）
+- [x] 校验失败自动生成 RAP 返回文件（RapBatchControlInfo / SevereReturn / FatalReturn / RapAuditControlInfo）
 - [x] 校验规则配置化（JSON 规则集、severity/off、阈值、error override 语义）
-- [x] 批量目录巡检 + 汇总报表（CLI `batch`，CSV / Excel）
+- [x] 批量目录巡检 + 汇总报表（CLI + UI，CSV / Excel）
+- [x] Listing 导出 / 导入闭环（Roaming Studio 自有 listing 格式）
+- [ ] **原生** TAP3 Listing 列位解析（需要真实运营商 `.lis` 样本；自有格式已可导入）
 - [x] Electron 桌面封装 + PyInstaller 冻结后端
 - [x] 大文件性能优化与交互回归测试
 

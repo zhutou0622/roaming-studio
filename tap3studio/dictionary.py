@@ -265,10 +265,21 @@ def _module() -> Optional[Module]:
     return tapfile.all_modules().get(MODULE_NAME)
 
 
-@lru_cache(maxsize=1)
-def _reverse_index() -> Dict[str, List[str]]:
-    """Map type name -> list of types that reference it (parents)."""
-    module = _module()
+def _module_for(type_name: str) -> Optional[Module]:
+    """Find the bundled schema module that defines *type_name*."""
+    modules = tapfile.all_modules()
+    default = modules.get(MODULE_NAME)
+    if default is not None and type_name in default.types:
+        return default
+    for module in modules.values():
+        if type_name in module.types:
+            return module
+    return default
+
+
+@lru_cache(maxsize=16)
+def _reverse_index_for(module_name: str) -> Dict[str, List[str]]:
+    module = tapfile.all_modules().get(module_name)
     out: Dict[str, List[str]] = {}
     if module is None:
         return out
@@ -280,6 +291,14 @@ def _reverse_index() -> Dict[str, List[str]]:
     for ref, parents in out.items():
         parents.sort()
     return out
+
+
+def _reverse_index(module: Optional[Module] = None) -> Dict[str, List[str]]:
+    if module is None:
+        module = _module()
+    if module is None:
+        return {}
+    return _reverse_index_for(module.name)
 
 
 def _collect_refs(t: Type, refs: set, depth: int = 0):
@@ -305,9 +324,9 @@ def _tag_prefix(t: Type) -> str:
     return ""
 
 
-def render_asn1(name: str) -> List[str]:
+def render_asn1(name: str, module: Optional[Module] = None) -> List[str]:
     """Pretty print one type definition as ASN.1 text lines."""
-    module = _module()
+    module = module or _module()
     if module is None or name not in module.types:
         return []
     t = module.types[name]
@@ -346,16 +365,16 @@ def _type_ref(t: Type) -> str:
 
 
 def dictionary(type_name: str, field_name: str = "") -> dict:
-    module = _module()
+    module = _module_for(type_name)
     if module is None or type_name not in module.types:
         raise KeyError(f"unknown type {type_name}")
-    parent_names = [p for p in _reverse_index().get(type_name, [])][:4]
+    parent_names = [p for p in _reverse_index(module).get(type_name, [])][:4]
     # the definition shown is the containing type (as in Roaming Studio),
     # falling back to the field type itself
     shown = parent_names or [type_name]
     asn1 = []
     for n in shown[:2]:
-        asn1.extend(render_asn1(n))
+        asn1.extend(render_asn1(n, module))
     desc = DESCRIPTIONS.get(type_name)
     if desc is None:
         kind = module.types[type_name].resolved(module).kind if module and type_name in module.types else "data item"

@@ -53,14 +53,52 @@ def load_module(filename: str) -> Module:
 @lru_cache(maxsize=1)
 def all_modules() -> Dict[str, Module]:
     out = {}
-    for fn in ("TAP0311.asn", "TAP0309.asn"):
-        p = os.path.join(SCHEMA_DIR, fn)
-        if os.path.exists(p):
-            try:
-                out[fn] = load_module(fn)
-            except Exception:
-                pass
+    if not os.path.isdir(SCHEMA_DIR):
+        return out
+    for fn in sorted(os.listdir(SCHEMA_DIR)):
+        if not fn.lower().endswith(".asn"):
+            continue
+        try:
+            out[fn] = load_module(fn)
+        except Exception:
+            pass
+    # RAP1 / NRTRDE modules IMPORT TAP types (Sender, Recipient, ...).
+    # Merge the TAP3.11 definitions so those aliases resolve.
+    base = out.get("TAP0311.asn")
+    if base is not None:
+        for fn, module in out.items():
+            upper = fn.upper()
+            if upper.startswith(("RAP", "NRT")):
+                for name, tdef in base.types.items():
+                    module.types.setdefault(name, tdef)
     return out
+
+
+ROOT_TYPES = {"tap3": "DataInterChange", "rap": "RapDataInterChange", "nrtrde": "Nrtrde"}
+KIND_LABELS = {"tap3": "TAP3", "rap": "RAP1", "nrtrde": "NRTRDE"}
+
+
+def schema_specs() -> list:
+    """Bundled schemas with kind, release number and root type."""
+    specs = []
+    for fn in all_modules():
+        upper = fn.upper()
+        if upper.startswith("TAP"):
+            kind, rest = "tap3", upper[3:7]
+        elif upper.startswith("RAP"):
+            kind, rest = "rap", upper[3:7]
+        elif upper.startswith("NRT"):
+            kind, rest = "nrtrde", upper[3:7]
+        else:
+            continue
+        try:
+            release = int(rest[2:4])
+        except ValueError:
+            release = 0
+        specs.append({"file": fn, "kind": kind, "release": release,
+                      "root": ROOT_TYPES[kind]})
+    specs.sort(key=lambda x: (x["kind"], x["release"]))
+    return specs
 
 
 def _alias_name(t: Optional[Type], module: Module) -> str:
@@ -145,10 +183,11 @@ class Tap3Document:
             self.notes.append(f"{len(self.raw) - end} trailing byte(s) after top level element ignored")
         self.root = root
         kind = self._guess_kind()
-        if kind == "tap3":
+        self.kind = kind
+        if kind in ("tap3", "rap", "nrtrde"):
             self._annotate_best()
         else:
-            # RAP1 / NRTRDE / unknown: keep a generic tree, still tag-annotated
+            # unknown layout: keep a generic tree, still tag-labelled
             self.module = all_modules().get("TAP0311.asn")
             self.schema_name = "generic"
         self._reindex()
@@ -158,50 +197,82 @@ class Tap3Document:
 
     def _guess_kind(self) -> str:
         r = self.root
-        if r.tag_class == APPLICATION and r.tag_num in (1, 2) and r.constructed:
+        if r.tag_class != APPLICATION or not r.constructed:
+            return "generic"
+        if r.tag_num in (534, 535):
+            return "rap"
+        if r.tag_num == 2:
             return "tap3"
+        if r.tag_num == 1:
+            # A TransferBatch always starts with BatchControlInfo (APPLICATION 4);
+            # everything else with this root tag is an NRTRDE file.
+            for child in r.children:
+                if child.tag_class == APPLICATION and child.tag_num == 4:
+                    return "tap3"
+            return "nrtrde"
         return "generic"
 
-    def _sniff_release(self) -> Optional[int]:
-        """Read releaseVersionNumber from the raw tree without annotation."""
+    def _sniff_release(self, kind: str) -> Optional[int]:
+        """Read the release number from the raw tree without annotation."""
+        wanted = {189}
+        if kind == "rap":
+            wanted = {543, 189}
         for child in self.root.children:
-            if child.tag_class != "APPLICATION" or not child.constructed:
+            if child.tag_class != "APPLICATION":
                 continue
             for sub in child.children:
-                if sub.tag_class == "APPLICATION" and sub.tag_num == 189 and not sub.constructed:
-                    return int.from_bytes(sub.payload, "big") if sub.payload else None
+                if sub.tag_class == "APPLICATION" and sub.tag_num in wanted and not sub.constructed:
+                    if sub.payload:
+                        return int.from_bytes(sub.payload, "big")
         return None
 
     def _annotate_best(self):
-        modules = all_modules()
-        if not modules:
+        specs = schema_specs()
+        if not specs:
             self.module = None
             return
-        rel = self._sniff_release()
-        preferred = "TAP0311.asn" if (rel is None or rel >= 9) else "TAP0309.asn"
-        order = [preferred] + [k for k in modules if k != preferred]
+        kind = getattr(self, "kind", "tap3") or "tap3"
+        candidates = [sp for sp in specs if sp["kind"] == kind]
+        if not candidates:
+            candidates = [sp for sp in specs if sp["kind"] == "tap3"]
+        rel = self._sniff_release(kind)
+        exact = []
+        if rel is not None:
+            exact = [sp for sp in candidates if sp["release"] == rel]
+        if exact:
+            candidates = exact + [sp for sp in candidates if sp not in exact]
+        else:
+            # newest first when the release is unknown
+            candidates = sorted(candidates, key=lambda sp: -sp["release"])
+        node_count = max(1, self._count_nodes())
         best = None
         last = None
-        node_count = max(1, self._count_nodes())
-        for name in order:
-            if name not in modules:
+        for spec in candidates:
+            module = all_modules().get(spec["file"])
+            if module is None:
                 continue
-            module = modules[name]
-            if last != name:
-                reset_annotation(self.root)
-                mismatch = _annotate(self.root, module.types.get("DataInterChange"), module, 0)
-                last = name
-            best = (mismatch, name, module)
-            # a clean match (or a negligible number of unmatched tags) is enough
-            if mismatch == 0 or mismatch <= max(1, node_count // 500):
+            root_type = module.types.get(spec["root"])
+            if root_type is None:
+                continue
+            reset_annotation(self.root)
+            mismatch = _annotate(self.root, root_type, module, 0)
+            last = spec
+            best = (mismatch, spec, module)
+            if mismatch == 0:
+                break
+            if len(candidates) == 1 or mismatch <= max(1, node_count // 500):
                 break
         if best is None:
             self.module = None
             return
-        _, name, module = best
+        _, spec, module = best
         self.module = module
-        self.schema_name = name
+        self.schema_name = spec["file"]
+        self.schema_kind = spec["kind"]
         self.schema_mismatch = best[0]
+        if last is not spec:
+            reset_annotation(self.root)
+            _annotate(self.root, module.types.get(spec["root"]), module, 0)
 
     def _count_nodes(self) -> int:
         n, stack = 0, [self.root]
@@ -244,6 +315,11 @@ class Tap3Document:
         return hits[0] if hits else None
 
     def _detect_release(self):
+        if getattr(self, "kind", "") == "rap":
+            n = self._by_name.get("rapReleaseVersionNumber")
+            if n is not None:
+                self.release = _int_value(n)
+                return
         n = self._by_name.get("releaseVersionNumber")
         if n is not None:
             if n.tag_num == 189 and n.payload:
@@ -269,9 +345,16 @@ class Tap3Document:
 
     @property
     def release_label(self) -> str:
+        kind = getattr(self, "kind", "tap3")
         if self.release is None:
-            return "unknown"
-        return RELEASES.get(self.release, f"releaseVersionNumber={self.release}")
+            return KIND_LABELS.get(kind, "unknown") + " (release unknown)"
+        if kind == "tap3":
+            return RELEASES.get(self.release, f"TAP3.{self.release:02d}")
+        if kind == "rap":
+            return f"RAP1.{self.release:02d}"
+        if kind == "nrtrde":
+            return f"NRTRDE release {self.release}"
+        return f"release {self.release}"
 
     # ----------------------------------------------------------- annotation
     def header(self) -> dict:

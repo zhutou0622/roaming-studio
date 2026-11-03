@@ -296,6 +296,23 @@ ipcMain.handle("window-maximize", () => {
   else state.win.maximize();
 });
 ipcMain.handle("window-close", () => app.quit());
+ipcMain.handle("pick-file", async (_evt, opts) => {
+  const res = await dialog.showOpenDialog(state.win, {
+    title: (opts && opts.title) || "Select a file",
+    properties: ["openFile"],
+    filters: (opts && opts.filters) || [{ name: "All files", extensions: ["*"] }],
+  });
+  if (res.canceled || !res.filePaths.length) return "";
+  return res.filePaths[0];
+});
+ipcMain.handle("pick-directory", async () => {
+  const res = await dialog.showOpenDialog(state.win, {
+    title: "Select a folder with TAP files",
+    properties: ["openDirectory"],
+  });
+  if (res.canceled || !res.filePaths.length) return "";
+  return res.filePaths[0];
+});
 ipcMain.handle("app-info", () => ({
   version: app.getVersion(),
   baseUrl: state.baseUrl,

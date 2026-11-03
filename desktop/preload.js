@@ -26,4 +26,6 @@ contextBridge.exposeInMainWorld("tap3desktop", {
   minimize: () => ipcRenderer.invoke("window-minimize"),
   maximize: () => ipcRenderer.invoke("window-maximize"),
   close: () => ipcRenderer.invoke("window-close"),
+  pickDirectory: () => ipcRenderer.invoke("pick-directory"),
+  pickFile: (opts) => ipcRenderer.invoke("pick-file", opts || {}),
 });

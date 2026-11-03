@@ -38,6 +38,11 @@ def scan(paths: Iterable[str], profile: Optional[dict] = None,
                "status": "OK", "message": ""}
         try:
             doc = tapfile.open_document(path)
+            if getattr(doc, "kind", "tap3") != "tap3":
+                row.update({"release": doc.release_label, "status": "SKIPPED",
+                            "message": "not a TAP3 file"})
+                rows.append(row)
+                continue
             result = validate.validate(doc, profile)
             header = doc.header()
             stats = doc.statistics()
@@ -103,6 +108,7 @@ def summary(rows: List[Dict]) -> Dict:
         "ok": sum(1 for r in rows if r["status"] == "OK"),
         "with_errors": sum(1 for r in rows if r["status"] == "ERRORS"),
         "failed": sum(1 for r in rows if r["status"] == "FAILED"),
+        "skipped": sum(1 for r in rows if r["status"] == "SKIPPED"),
         "records": sum(r.get("records") or 0 for r in rows),
         "errors": sum(r.get("errors") or 0 for r in rows),
         "warnings": sum(r.get("warnings") or 0 for r in rows),

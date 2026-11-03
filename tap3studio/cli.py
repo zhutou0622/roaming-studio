@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-from . import batch, generator, ops, rules, tapfile, validate
+from . import batch, generator, ops, rap, rules, tapfile, validate
 
 
 def cmd_info(args):
@@ -63,6 +63,24 @@ def cmd_events(args):
     return 0
 
 
+def cmd_rap(args):
+    doc = tapfile.open_document(args.file)
+    profile = rules.normalize(path=args.profile) if args.profile else None
+    result = validate.validate(doc, profile)
+    findings = [f for f in result["findings"] if f["severity"] == "error" or not args.errors_only]
+    if not findings:
+        print("no findings to return")
+        return 1
+    rapdoc = rap.build_rap(doc, findings)
+    out = args.out or rap.rap_filename(args.file)
+    rapdoc.save(out)
+    details = sum(1 for n in rapdoc.nodes.values()
+                  if n.name in ("severeReturn", "fatalReturn", "stopReturn", "missingReturn"))
+    print(f"{out}: {rapdoc.release_label}, {details} return detail(s), "
+          f"{len(findings)} finding(s) from {args.file}")
+    return 0
+
+
 def cmd_batch(args):
     profile = rules.normalize(path=args.profile) if args.profile else None
     rows = batch.scan(args.paths, profile, args.pattern)
@@ -75,13 +93,24 @@ def cmd_batch(args):
     total = batch.summary(rows)
     print("-" * len(head))
     print(f"files={total['files']} ok={total['ok']} errors={total['with_errors']} "
-          f"failed={total['failed']} records={total['records']} "
-          f"findings={total['errors']}E/{total['warnings']}W")
+          f"failed={total['failed']} skipped={total.get('skipped', 0)} "
+          f"records={total['records']} findings={total['errors']}E/{total['warnings']}W")
     if args.csv:
         print("csv:", batch.write_csv(rows, args.csv))
     if args.xlsx:
         print("xlsx:", batch.write_xlsx(rows, args.xlsx))
     return 1 if (total["with_errors"] or total["failed"]) else 0
+
+
+def cmd_import_listing(args):
+    try:
+        doc = ops.import_listing(args.file)
+    except ops.OpsError as exc:
+        print(f"import failed: {exc}")
+        return 2
+    doc.save(args.out)
+    print(f"{args.out}: {len(doc.events())} event(s) rebuilt from {args.file}")
+    return 0
 
 
 def cmd_export(args):
@@ -174,6 +203,18 @@ def main(argv=None):
 
     p = sub.add_parser("events", help="list call events"); p.add_argument("file")
     p.add_argument("--limit", type=int, default=50); p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("import-listing", help="rebuild a TAP3 skeleton from a listing file")
+    p.add_argument("file")
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_import_listing)
+
+    p = sub.add_parser("rap", help="generate a RAP1 return file from validation findings")
+    p.add_argument("file")
+    p.add_argument("--out", default="")
+    p.add_argument("--profile", default="")
+    p.add_argument("--errors-only", action="store_true")
+    p.set_defaults(func=cmd_rap)
 
     p = sub.add_parser("batch", help="scan a folder of TAP files")
     p.add_argument("paths", nargs="+")

@@ -256,6 +256,68 @@ app.whenReady().then(async () => {
       /records: 3883/.test(statusBar) && /charge: .*USD/.test(statusBar) &&
       !/records: 3883 USD/.test(statusBar), statusBar);
 
+    /* ---------------- batch scan dialog ---------------- */
+    const batchDir = path.join(os.tmpdir(), "roaming_studio_batch_" + Date.now());
+    fs.mkdirSync(batchDir, { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "samples", "demo.tap3"), path.join(batchDir, "demo.tap3"));
+    fs.writeFileSync(path.join(batchDir, "broken.bin"), Buffer.from([0x61, 0x82, 0x10, 0x00]));
+    const batchCsv = path.join(batchDir, "scan.csv");
+    const batchUi = await evalJs(`(async () => {
+      await runCommand('batchScan');
+      const dlg = document.querySelector('#modalLayer');
+      const open = dlg.classList.contains('on');
+      const inputs = dlg.querySelectorAll('input[type=text]');
+      inputs[0].value = ${JSON.stringify(batchDir)};
+      inputs[2].value = ${JSON.stringify(batchCsv)};
+      Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Scan').click();
+      await new Promise(r => setTimeout(r, 1500));
+      const rows = dlg.querySelectorAll('table tr').length;
+      const summary = Array.from(dlg.querySelectorAll('.dlg-body div.muted'))
+        .map(n => n.textContent).join(' | ');
+      Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Export CSV').click();
+      await new Promise(r => setTimeout(r, 1200));
+      Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Close').click();
+      return { open, rows, summary };
+    })()`);
+    check("batch scan dialog", batchUi.open && batchUi.rows >= 3, JSON.stringify(batchUi));
+    check("batch scan reports status", /2 file\(s\)/.test(batchUi.summary), batchUi.summary);
+    check("batch CSV export", fs.existsSync(batchCsv) && fs.statSync(batchCsv).size > 20,
+      fs.existsSync(batchCsv) ? `size=${fs.statSync(batchCsv).size}` : "missing");
+    try { fs.rmSync(batchDir, { recursive: true, force: true }); } catch (_e) { /* ignore */ }
+
+    /* ---------------- RAP return generation ---------------- */
+    const rapPath = path.join(os.tmpdir(), "roaming_studio_uitest_return.rap");
+    try { fs.unlinkSync(rapPath); } catch (_e) { /* absent */ }
+    const rapUi = await evalJs(`(async () => {
+      await runCommand('genRap');
+      const dlg = document.querySelector('#modalLayer');
+      const open = dlg.classList.contains('on');
+      const inp = dlg.querySelector('input[type=text]');
+      inp.value = ${JSON.stringify(rapPath)};
+      const inc = dlg.querySelector('input[type=checkbox]');
+      if (inc) inc.checked = true;
+      Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Generate').click();
+      await new Promise(r => setTimeout(r, 1800));
+      const body = dlg.innerText;
+      Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Close').click();
+      return { open, body };
+    })()`);
+    check("RAP dialog opens", rapUi.open, String(rapUi.body).slice(0, 80));
+    check("RAP file written", fs.existsSync(rapPath) && fs.statSync(rapPath).size > 100,
+      fs.existsSync(rapPath) ? `size=${fs.statSync(rapPath).size}` : "missing");
+    const rapBack = await httpJson(base + "/api/open", "POST", { path: rapPath }, 30000);
+    check("generated RAP opens as RAP1",
+      rapBack.status === 200 && /RAP1/.test(rapBack.json.header.releaseLabel),
+      rapBack.json && rapBack.json.header && rapBack.json.header.releaseLabel);
+    try { fs.unlinkSync(rapPath); } catch (_e) { /* ignore */ }
+    await httpJson(base + "/api/open", "POST", { path: FILE }, 60000);
+    await evalJs("refreshAll()");
+
     /* ---------------- schema-driven insertion ---------------- */
     const ins = await evalJs(`(async () => {
       const ev = state.nav.children.find(c => c.kind === 'events');

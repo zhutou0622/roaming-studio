@@ -11,7 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import dictionary as dictionary_mod
-from . import generator, ops, resources, rules, tapfile, validate
+from . import batch as batch_mod
+from . import generator, ops, rap as rap_mod, resources, rules, tapfile, validate
 from .tapfile import _int_value
 
 WEB_DIR = resources.resource_path("web")
@@ -66,6 +67,28 @@ class GenReq(BaseModel):
 class MergeReq(BaseModel):
     paths: List[str]
     out: str
+
+
+class ListingImportReq(BaseModel):
+    path: str
+    out: str
+
+
+class BatchReq(BaseModel):
+    paths: List[str]
+    pattern: str = "*"
+    profile: Optional[dict] = None
+
+
+class BatchExportReq(BatchReq):
+    out: str
+    fmt: str = "xlsx"
+
+
+class RapReq(BaseModel):
+    out: Optional[str] = None
+    profile: Optional[dict] = None
+    include_warnings: bool = True
 
 
 class ValidateReq(BaseModel):
@@ -244,6 +267,12 @@ def save(req: SaveReq):
 
 
 def _run_validation(doc, profile=None):
+    if getattr(doc, "kind", "tap3") != "tap3":
+        return {"file": doc.filename, "release": doc.release_label, "records": 0,
+                "errors": 0, "warnings": 0, "findings": [], "suppressed": 0,
+                "profile": "n/a", "skipped": True,
+                "reason": "validation rules currently apply to TAP3 files; "
+                          "RAP1/NRTRDE are browsable/editable only"}
     result = validate.validate(doc, profile)
     by_path = {}
     for node in doc.nodes.values():
@@ -261,6 +290,67 @@ def do_validate():
 @app.post("/api/validate")
 def do_validate_post(req: Optional[ValidateReq] = None):
     return _run_validation(_doc(), req.profile if req else None)
+
+
+@app.post("/api/import-listing")
+def import_listing(req: ListingImportReq):
+    try:
+        doc = ops.import_listing(req.path)
+        doc.save(req.out)
+    except (OSError, ops.OpsError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    STATE["doc"] = doc
+    STATE["path"] = os.path.abspath(req.out)
+    return {"ok": True, "path": STATE["path"], "events": len(doc.events()),
+            "size": os.path.getsize(STATE["path"]),
+            "header": doc.header(), "stats": doc.statistics(),
+            "root": doc.root.to_dict(shallow=True)}
+
+
+@app.post("/api/batch")
+def batch_scan(req: BatchReq):
+    profile = rules.normalize(req.profile) if req.profile else None
+    rows = batch_mod.scan(req.paths, profile, req.pattern)
+    return {"rows": rows, "summary": batch_mod.summary(rows)}
+
+
+@app.post("/api/batch/export")
+def batch_export(req: BatchExportReq):
+    profile = rules.normalize(req.profile) if req.profile else None
+    rows = batch_mod.scan(req.paths, profile, req.pattern)
+    fmt = req.fmt.lower()
+    try:
+        if fmt == "csv":
+            batch_mod.write_csv(rows, req.out)
+        elif fmt in ("xlsx", "excel"):
+            batch_mod.write_xlsx(rows, req.out)
+        else:
+            raise HTTPException(status_code=400, detail="fmt must be csv or xlsx")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"ok": True, "path": os.path.abspath(req.out), "files": len(rows),
+            "summary": batch_mod.summary(rows)}
+
+
+@app.post("/api/rap")
+def generate_rap(req: RapReq):
+    doc = _doc()
+    result = validate.validate(doc, req.profile)
+    findings = [f for f in result["findings"]
+                if req.include_warnings or f["severity"] == "error"]
+    if not findings:
+        raise HTTPException(status_code=422, detail="no findings to return")
+    try:
+        rapdoc = rap_mod.build_rap(doc, findings)
+    except rap_mod.RapError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    out = req.out or rap_mod.rap_filename(STATE["path"] or doc.filename)
+    rapdoc.save(out)
+    details = sum(1 for n in rapdoc.nodes.values()
+                  if n.name in ("severeReturn", "fatalReturn", "stopReturn", "missingReturn"))
+    return {"ok": True, "path": os.path.abspath(out), "details": details,
+            "returned": len(findings), "errors": result["errors"],
+            "warnings": result["warnings"], "release": rapdoc.release_label}
 
 
 @app.get("/api/rules")
