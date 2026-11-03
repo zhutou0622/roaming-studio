@@ -1,0 +1,65 @@
+{
+  "name": "tap3-studio-desktop",
+  "productName": "Roaming Studio",
+  "version": "1.0.0",
+  "description": "Roaming Studio — TAP3/RAP/NRTRDE viewer, editor and validator (Electron shell)",
+  "author": "TAP3 Studio",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --enable-logging",
+    "selftest": "node selftest.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.roamingstudio.desktop",
+    "productName": "Roaming Studio",
+    "copyright": "TAP3 Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "backend.js",
+      "assets/**",
+      "!**/*.pyc"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/onedir/tap3-server",
+        "to": "backend/onedir"
+      },
+      {
+        "from": "../samples",
+        "to": "samples"
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Roaming-Studio-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Roaming Studio",
+      "artifactName": "Roaming-Studio-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Roaming-Studio-${version}-portable.${ext}"
+    }
+  }
+}

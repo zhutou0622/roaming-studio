@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Roaming Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="titlebar">
+  <div class="tb-icon">R</div>
+  <div id="appTitle" class="tb-title">Roaming Studio - [no file]</div>
+  <div class="winbtns" id="winBtns">
+    <button id="btnMin" title="Minimize">&#x2013;</button>
+    <button id="btnMax" title="Maximize">&#x25A1;</button>
+    <button id="btnClose" title="Close">&#x2715;</button>
+  </div>
+</div>
+
+<div id="menubar"></div>
+<div id="toolbar"></div>
+
+<div id="workspace">
+  <div id="leftPane" class="pane">
+    <div id="navTree" class="tree"></div>
+  </div>
+  <div class="vsplit" id="splitLeft"></div>
+  <div id="centerPane" class="pane">
+    <div id="mainTree" class="tree"></div>
+  </div>
+  <div class="vsplit" id="splitRight"></div>
+  <div id="rightPane" class="pane">
+    <div class="dict-title">Data Dictionary</div>
+    <div class="dict-tabbar"><div class="dict-tab" id="dictTab">—</div></div>
+    <div class="dict-body" id="dictBody"></div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="statusText">Ready</span>
+  <span id="statusInfo"></span>
+</div>
+
+<div id="menuLayer"></div>
+<div id="modalLayer"></div>
+<div id="ctxLayer"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

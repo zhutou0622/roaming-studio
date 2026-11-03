@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Byte-compile
+        run: python -m compileall -q tap3studio run.py server_entry.py
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+  frontend:
+    name: Frontend syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check (web + Electron shell)
+        run: |
+          set -e
+          for f in web/app.js desktop/main.js desktop/backend.js desktop/preload.js \
+                   desktop/uitest.js desktop/uitest-large.js desktop/uitest-sections.js \
+                   desktop/selftest.js desktop/shot.js desktop/shot-edit.js desktop/perf.js; do
+            node --check "$f"
+          done
+  smoke:
+    name: Backend smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements.txt
+      - name: Launch backend and hit the API
+        run: node desktop/selftest.js
