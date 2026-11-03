@@ -1,5 +1,26 @@
 # 大文件性能优化记录（CDVGBCCUSAK405097_20240320_135240_POST）
 
+## English summary
+
+The reference file is a 1.08 MB TAP3.12 batch with **168,605 ASN.1 nodes / 3,883 call records**.
+It was unusable in the first implementation; the optimisations below brought it back to interactive
+speed:
+
+| Operation | Before | After |
+| --- | --- | --- |
+| Open file (decode + annotate) | 2.0 s | **1.2 s** |
+| Header calculation (`/api/state`, `/api/nav`, save) | 4.3 s per call | **< 1 ms** |
+| Open `callEventDetails` | 65.6 MB JSON, UI freeze | **0.34 s / 3,884 rows** |
+| Node details for the root | 70.7 MB JSON | **0.7 KB** |
+| Navigation tree (3,883 rows) | one-shot DOM | **400-row chunks + scroll loading** |
+| Save untouched file | 1 byte larger | **byte-identical** |
+
+Root causes and fixes: full-table regex scans in `header()`, deep subtree serialisation for node
+details, unbounded tree depth for large lists, double schema annotation on open, re-encoding of
+indefinite-length elements, and one-shot DOM construction. Detailed Chinese notes follow below.
+
+---
+
 样本：`E:\Deepseek工作目录\Romaing Stadio\CDVGBCCUSAK405097_20240320_135240_POST`
 大小 1.08 MB，TAP3.12，**168,605 个 ASN.1 节点 / 3,883 条话单**（原报告“很卡”即此文件）。
 

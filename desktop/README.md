@@ -1,43 +1,50 @@
-# TAP3 Studio · Desktop (Electron)
+# Roaming Studio · Desktop (Electron)
 
-把 `TapStudio` 的 Python 后端装进 Electron 外壳，得到双击即用的桌面工具。界面按参考程序（Semantix Roaming Studio）的经典 Win32 布局实现：自绘标题栏 + 菜单栏 + 三窗格（导航树 / ASN.1 树 / Data Dictionary）+ 状态栏，编辑与校验用经典对话框完成。
+**English** | [简体中文](README.zh-CN.md)
+
+The Electron shell hosts the Python backend and provides a double-click desktop tool. The UI
+follows the classic Win32 layout used by roaming settlement tools: custom title bar, menu bar,
+three panes (navigation tree / ASN.1 tree / Data Dictionary) and a status bar; editing and
+validation happen in classic dialogs.
 
 ![UI](../docs/ui-packaged.png)
 
-原生能力：无边框窗口（自绘最小化/最大化/关闭）、原生「打开文件 / 保存到…」对话框、拖拽打开、单实例、后台日志、退出时回收后端进程。
+Native features: frameless window with custom minimize/maximize/close, native Open / Save As
+dialogs, drag-and-drop, single instance, backend log, and backend shutdown on exit.
 
-## 目录
+## Layout
 
 ```
 desktop/
-├─ package.json       Electron + electron-builder 配置（nsis + portable）
-├─ main.js            主进程：启动后端、窗口、菜单、IPC、单实例
-├─ backend.js         后端生命周期：找 exe / 找 python、空闲端口、健康检查、优雅退出
-├─ preload.js         contextBridge：window.tap3desktop
-├─ selftest.js        无窗口自检（node selftest.js）
+├─ package.json       Electron + electron-builder config (nsis + portable)
+├─ main.js            main process: backend lifecycle, window, menu, IPC, single instance
+├─ backend.js         backend lifecycle: exe/python lookup, free port, health check, graceful stop
+├─ preload.js         contextBridge: window.tap3desktop
+├─ selftest.js        headless backend self-test (node selftest.js)
 └─ assets/            icon.png / icon.ico
 ```
 
-## 后端解析顺序（`backend.js`）
+## Backend resolution order (`backend.js`)
 
-1. `TAP3SERVER_EXE` 环境变量
-2. 打包后：`resources/backend/onedir/tap3-server.exe`（PyInstaller onedir，启动约 0.9s）
-3. 打包后（旧布局）：`resources/backend/tap3-server.exe`（onefile）
-4. 开发态：`<repo>/dist/onedir/tap3-server/tap3-server.exe` → `<repo>/dist/tap3-server.exe`
-5. 回退：`TAP3STUDIO_PYTHON` → `<repo>/.venv/Scripts/python.exe` → `python`，执行 `-m tap3studio.server`
+1. `TAP3SERVER_EXE` environment variable
+2. Packaged: `resources/backend/onedir/tap3-server.exe` (PyInstaller onedir, ~0.9 s start)
+3. Packaged (legacy layout): `resources/backend/tap3-server.exe` (onefile)
+4. Development: `<repo>/dist/onedir/tap3-server/tap3-server.exe` → `<repo>/dist/tap3-server.exe`
+5. Fallback: `TAP3STUDIO_PYTHON` → `<repo>/.venv/Scripts/python.exe` → `python -m tap3studio.server`
 
-后端固定监听 `127.0.0.1:<随机空闲端口>`，主进程轮询 `/api/state` 直到就绪（默认 45s 超时），失败弹窗给出路径与日志位置。
+The backend listens on `127.0.0.1:<random free port>`; the main process polls `/api/state` until it
+is ready (45 s timeout) and shows an error dialog with the log path on failure.
 
-## 开发运行
+## Development
 
 ```bat
 cd desktop
 npm install
-npm run start            :: 启动桌面应用
-npm run selftest         :: 只测后端管道，不开窗口
+npm run start            :: start the desktop app
+npm run selftest         :: backend pipeline only, no window
 ```
 
-生成/更新内置后端（仓库根目录，onedir 为默认打包形态，27MB、1.2s 冷启动）：
+Rebuild the bundled backend (repo root; onedir is the default packaging form, 27 MB, ~1.2 s cold start):
 
 ```bat
 python -m PyInstaller --noconfirm --onedir --name tap3-server --distpath dist/onedir ^
@@ -54,55 +61,72 @@ python -m PyInstaller --noconfirm --onedir --name tap3-server --distpath dist/on
   server_entry.py
 ```
 
-单文件（onefile）版本仍可作为备选：把 `--onedir` 换成 `--onefile`，输出 `dist/tap3-server.exe`，启动约 19s（每次解包 38MB）。
+A onefile build is still possible (`--onefile`), but it unpacks ~38 MB per launch and starts in ~19 s.
 
-## 打包
+## Packaging
 
 ```bat
-npm run pack    :: 免安装目录 release/win-unpacked
-npm run dist    :: NSIS 安装包 + 便携版 exe（release/）
+npm run pack    :: unpacked directory in release/win-unpacked
+npm run dist    :: NSIS installer + portable exe (release/)
 ```
 
-产物：`release/Roaming-Studio-Setup-1.0.0.exe`（安装版）、`release/Roaming-Studio-1.0.0-portable.exe`（便携版）、`release/win-unpacked/`（免安装目录）。
+Artifacts: `release/Roaming-Studio-Setup-<version>.exe`, `release/Roaming-Studio-<version>-portable.exe`,
+`release/win-unpacked/`.
 
-打包内容：`main.js/preload.js/backend.js/assets` 进 asar；`dist/tap3-server.exe` 与 `samples/` 作为 `extraResources` 落到 `resources/backend`、`resources/samples`，因此目标机器**不需要装 Python**。
+Packaging copies `main.js/preload.js/backend.js/assets` into the asar, and `dist/onedir/tap3-server`
+plus `samples/` into `resources/backend` and `resources/samples`, so the target machine needs no
+Python installation.
 
-## 桌面端专属行为
+## Desktop behaviour
 
-| 行为 | 实现 |
+| Behaviour | Implementation |
 | --- | --- |
-| 原生打开对话框（Ctrl+O） | 菜单 → `dialog.showOpenDialog` → `POST /api/open` → 重载页面 |
-| 保存到…（Ctrl+S） | `dialog.showSaveDialog` → `POST /api/save` |
-| 拖拽文件打开 | `webUtils.getPathForFile` → 同一个 `/api/open` 流程 |
-| 打开示例文件 | `resources/samples/demo.tap3`（开发态回退仓库 `samples/`） |
-| 后台日志 | `%APPDATA%/TAP3 Studio/backend.log`，帮助 → 后台日志 |
-| 单实例 | `requestSingleInstanceLock`；第二个实例带文件参数时转发打开 |
-| 退出清理 | `before-quit` → `taskkill /pid <pid> /t /f`（非 Windows 用 SIGTERM） |
-| 冒烟测试 | `TAP3_SMOKE=1 npx electron .` 渲染完成后自动退出并写日志 |
-| UI 功能测试 | `npx electron uitest.js`（14 项断言：树/词条/菜单/校验/编辑/Hex/错误处理） |
-| 界面截图 | `npx electron shot.js [out.png] [w] [h] [file]` → 默认 `../docs/ui-dev.png` |
-| 编辑标记/末条跳转截图 | `npx electron shot-edit.js` → `../docs/ui-edit-highlight.png`、`../docs/ui-last-call.png` |
-| 分区展开测试 | `npx electron uitest-sections.js`（accountingInfo / networkInfo / batchControlInfo / auditControlInfo 全展开） |
-| 大文件性能探针 | `npx electron perf.js "path	oile"`（打开/树/选中/校验耗时） |
+| Native Open dialog (Ctrl+O) | menu → `dialog.showOpenDialog` → `POST /api/open` → page reload |
+| Save As (Ctrl+S) | `dialog.showSaveDialog` → `POST /api/save` (same file name, overwrite in place) |
+| Drag and drop | `webUtils.getPathForFile` → same `/api/open` flow |
+| Open sample | `resources/samples/demo.tap3` (falls back to repo `samples/` in development) |
+| Backend log | `%APPDATA%/TAP3 Studio/backend.log`, Help → Backend Log |
+| Single instance | `requestSingleInstanceLock`; a second instance forwards the file argument |
+| Exit cleanup | `before-quit` → `taskkill /pid <pid> /t /f` (SIGTERM elsewhere) |
+| Smoke test | `TAP3_SMOKE=1 npx electron .` loads, reports the desktop API and exits |
+| UI regression | `npx electron uitest.js` (14 checks) |
+| Large-file UI regression | `npx electron uitest-large.js "<file>"` |
+| Section expansion test | `npx electron uitest-sections.js "<file>"` |
+| Screenshots | `npx electron shot.js [out.png] [w] [h] [file]` → `../docs/ui-dev.png` |
+| Performance probe | `npx electron perf.js "<file>"` |
 
-## 性能（大文件）
+## Large-file performance
 
-- 打开 3,883 条话单 / 168,605 节点的 TAP3.12 文件：后端解码 1.2s，界面首屏 0.25s；`callEventDetails` 展开 0.34s，单条 CED 8ms。
-- 关键点：header 走名字索引并缓存、节点检查器只回浅层数据、`/api/tree` 按节点类型限制深度并设 20k 节点预算、左树分块 + 滚动续载、另存保留 BER 不定长实现字节级一致。
-- 详见 `../docs/performance.md`；回归：`python -m unittest tests.test_performance`。
+- 3,883 call records / 168,605 nodes: backend decode 1.2 s, first paint ~0.25 s,
+  `callEventDetails` 0.34 s, single CED 8 ms.
+- Key points: name-indexed and cached header, shallow node details, per-node depth limits plus a
+  20k node budget in `/api/tree`, chunked navigation with incremental loading, and byte-identical
+  saves that preserve BER indefinite lengths.
+- Details: `../docs/performance.md` (Chinese); regression: `python -m unittest tests.test_performance`.
 
-## 已知边界
+## Notes and limitations
 
-- `Ctrl+S` 保存沿用打开时的文件名并原地覆盖（无扩展名的运营商投放文件不会被改成 `.tap3`）。
-- 状态栏固定显示 `records: N` 与 `charge: x.xxxxx USD` 两项；`Validations → File Statistics...` 给出按类型统计与 AuditControlInfo 勾稽结论。
-- 编辑值后仍停留在当前话单树（不会把根切到该字段）；被修改字段以浅黄底标记，状态栏显示 `modified: N`，`View → Clear Modification Marks` 清除。
-- `Ctrl+Home` / `Ctrl+End`（或工具栏 `Last`）直接跳到第一条/最后一条话单，左树会自动补齐分块并滚动到对应 CED。
-- `Configure → Validation Profile...` 可逐条设置 severity / off、时长阈值、金额容差与重复检测；校验对话框会显示 profile 名称与被抑制条数。
-- `File → Import Listing...` 从 Roaming Studio 导出的 listing 文本重建 TAP3 骨架；`File → Batch Scan Folder...` 可选目录、Excel 导出、双击打开结果。
-- `Validations → Generate RAP Return File...` 把校验结果写成 RAP1.05 返回文件：无效话单 → `SevereReturn`，文件级问题 → `FatalReturn`，并生成 `RapAuditControlInfo`。
-- 选中 `accountingInfo`、`networkInfo`、`batchControlInfo`、`auditControlInfo` 等批次分组时，中间树会一次展开该分组内的全部列表（`taxation → [1] Taxation → taxCode/taxType/taxRate` 等）；`callEventDetails`（3,883 条）与文档根节点保持浅层，避免一次渲染上万行。
-- 打包默认使用 onedir 后端（`resources/backend/onedir/`），实测后端就绪 0.85s、整包冒烟 3.8s；onefile 备选约 19s。
-- 窗口在 `ready-to-show` 后才显示，避免白屏。
-- 如果从带有 `ELECTRON_RUN_AS_NODE=1` 的终端启动（某些 IDE/宿主环境会设置），Electron 会退化成 Node 运行而报 `app is undefined`：先 `unset ELECTRON_RUN_AS_NODE` 或 `env -u ELECTRON_RUN_AS_NODE npm start`。
-- Windows 上首次运行可能触发 SmartScreen（未签名 exe），正式分发前应做代码签名（`win.certificateFile` / `CSC_LINK`）。
-- 便携版每次运行都会把后端 exe 释放到临时目录；如追求极速启动可改用 `--onedir` 模式并调整 `extraResources`。
+- `Ctrl+S` keeps the original file name and overwrites in place (operator drop files without an
+  extension are not renamed to `.tap3`).
+- The status bar shows `records: N` and `charge: x.xxxxx USD` separately;
+  `Validations → File Statistics...` shows per-type numbers and the `AuditControlInfo` reconciliation.
+- After editing, the current call tree stays in view; modified fields are highlighted and the
+  status bar shows `modified: N`. `View → Clear Modification Marks` clears them.
+- `Ctrl+Home` / `Ctrl+End` (or the toolbar `Last`) jump to the first/last call; the navigation tree
+  loads the remaining chunks automatically.
+- `Configure → Validation Profile...` sets per-rule severity/off, duration threshold, charge
+  tolerance and duplicate detection.
+- `File → Import Listing...` rebuilds a TAP3 skeleton from a Roaming Studio listing;
+  `File → Batch Scan Folder...` scans a folder, exports CSV/Excel and opens a row on double-click.
+- `Validations → Generate RAP Return File...` writes a RAP1.05 return file from the findings.
+- Selecting `accountingInfo`, `networkInfo`, `batchControlInfo` or `auditControlInfo` expands the
+  whole section; `callEventDetails` and the document root stay shallow to avoid rendering tens of
+  thousands of rows.
+- The packaged backend is onedir (ready in ~0.85 s, smoke test 3.8 s); onefile is a fallback.
+- The window is shown after `ready-to-show` to avoid a white flash.
+- If the shell exports `ELECTRON_RUN_AS_NODE=1`, Electron runs as Node and fails with
+  `app is undefined`: use `env -u ELECTRON_RUN_AS_NODE npm start`.
+- Unsigned executables may trigger SmartScreen; sign before public distribution
+  (`win.certificateFile` / `CSC_LINK`).
+- The portable build extracts the backend to a temp directory on every launch; switch to onedir
+  packaging for the fastest start.

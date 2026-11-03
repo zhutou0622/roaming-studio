@@ -1,82 +1,93 @@
 # Roaming Studio · TAP3 Studio
 
-> 开源、跨平台的 **TAP3 / RAP / NRTRDE** 查看器、编辑器、校验器与统计工具。
+> Open-source, cross-platform **TAP3 / RAP / NRTRDE** viewer, editor, validator and statistics tool.
 > Schema-driven TAP3 tooling with a TD.57 data dictionary, byte-preserving edits and a classic desktop UI.
+
+**English** | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![Electron](https://img.shields.io/badge/desktop-Electron%2031-47848F?logo=electron&logoColor=white)](desktop/)
 [![Platform](https://img.shields.io/badge/desktop-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](desktop/)
 [![CI](https://github.com/zhutou0622/roaming-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/zhutou0622/roaming-studio/actions/workflows/ci.yml)
-![TAP3](https://img.shields.io/badge/TAP3-3.09%20%7C%203.11%20%7C%203.12-success)
+![TAP3](https://img.shields.io/badge/TAP3-3.01%E2%80%933.12-success)
 
 ![Roaming Studio](docs/ui-packaged.png)
 
 ---
 
-## English overview
+## Overview
 
-Roaming Studio is an independent, open-source reimplementation of the day-to-day workflow of a
-legacy TAP3 desktop editor: browse the ASN.1 tree of a transfer batch, inspect TD.57 field
-semantics, edit values in place, reconcile charges against `AuditControlInfo`, and export the
-result. It ships as an Electron desktop app with a bundled Python backend (no Python required on
-the target machine), a local REST API and a CLI.
+Roaming Studio is an independent, open-source implementation of the daily TAP3 workflow used in
+roaming settlement: browse the ASN.1 tree of a transfer batch, inspect TD.57 field semantics and
+code lists, edit values in place, reconcile charges against `AuditControlInfo`, validate whole
+folders of files and export the results.
+
+Delivery options:
+
+- **Electron desktop app** (Windows 10/11, bundled Python backend — no Python required on the target machine)
+- **Browser mode** (local FastAPI + build-free frontend, `python run.py`)
+- **CLI** (`python -m tap3studio.cli`, pipeline friendly)
+- **REST API** (20+ endpoints, scriptable)
 
 **Highlights**
 
-- Schema-driven BER/ASN.1 decoding for TAP3.09 / TAP3.11 modules (release 1–12 files recognised).
+- 15 bundled ASN.1 modules: TAP3.01–3.12, RAP1.01–1.05, NRTRDE 2.1; module chosen by release
 - Byte-preserving saves: untouched files re-encode to the exact original bytes, including
-  indefinite-length (`0x80 … 00 00`) elements.
-- TD.57 **Data Dictionary** pane: description, derivation, conditionality, code lists, validation
-  tables, ASN.1 definition and parent types, generated from the parsed schema.
-- 30+ validation rules (structure, accounting, audit reconciliation, timestamps, BCD, duplicates).
-- Interactive tree editing with “modified” highlighting that keeps the current call record in view.
-- Handles large files: 168k nodes / 3,883 call records open in ~1.2 s, navigation in milliseconds.
-- CSV / JSON / Tap3Info XML / listing / statistics export, merge and split, CLI and REST API.
+  indefinite-length (`0x80 … 00 00`) elements
+- TD.57 **Data Dictionary**: description, derivation, conditionality, code lists, validation
+  tables, ASN.1 definition and parent types
+- 30+ validation rules covering structure, accounting, audit reconciliation, timestamps, BCD and
+  duplicates; configurable profiles (severity/off, thresholds)
+- Interactive tree editing: schema-driven insertion of child/sibling elements, “modified”
+  highlighting, the current call record stays in view
+- Large files: 168,605 nodes / 3,883 call records open in ~1.2 s, navigation in milliseconds
+- CSV / JSON / Tap3Info XML / listing / statistics export, merge, split, batch scan and RAP returns
 
 ---
 
-## 功能特性
+## Features
 
-| 领域 | 能力 |
+| Area | Capability |
 | --- | --- |
-| 解析 | 随包 15 个 ASN.1 模块：TAP3.01–3.12、RAP1.01–1.05、NRTRDE 2.1；按 release 自动选模块；BER 定长/不定长、CHOICE 线上形态、BCD/数字串/HexString/INTEGER 值语义 |
-| 浏览 | `DataInterChange → transferBatch → batchControlInfo / accountingInfo / networkInfo / messageDescriptionInfo / callEventDetails / auditControlInfo` 导航；ASN.1 树按需展开；选中分组自动全展开 |
-| 数据字典 | 描述 / Derivation / Conditionality / Values 码表 / Validations 表 / ASN.1 Definition / Parent Types，随节点切换；TAP / RAP / NRTRDE 类型均可查询 |
-| 编辑 | 值编辑、HEX 写入、克隆、删除；**schema 驱动插入子/兄弟节点**（按 SEQUENCE 字段顺序落位、拒绝重复字段）；修改字段浅黄高亮；保持当前话单视图；`Ctrl+S` 原地覆盖、不改文件名 |
-| 校验 | 结构、账务、网络、事件、时间戳、审计勾稽、BCD 语法、重复记录；报告可点击定位；**规则配置化**（逐条 severity/off、时长阈值、金额容差、重复检测开关） |
-| 统计 | 按事件类型统计条数/金额/时长，并与 `AuditControlInfo.totalCharge` 勾稽 |
-| 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出；**Listing 导入**（自有格式）；**批量目录巡检**（CLI + UI，CSV / Excel 汇总）；**校验失败生成 RAP1.05 返回文件**（SevereReturn / FatalReturn） |
-| 导航 | `Ctrl+Home` / `Ctrl+End` 直达首/末话单；`Go to Call…` 按序号跳转 |
-| 性能 | 168,605 节点 / 3,883 记录：打开 1.2 s、切换话单 8 ms、校验 0.27 s |
-| 交付形态 | Electron 桌面版（Windows，内置后端，无需 Python）、浏览器模式、CLI |
+| Parsing | 15 bundled ASN.1 modules (TAP3.01–3.12, RAP1.01–1.05, NRTRDE 2.1); release-based selection; definite and indefinite BER lengths; CHOICE wire form; BCD / numeric / HexString / INTEGER semantics |
+| Browsing | `DataInterChange → transferBatch → batchControlInfo / accountingInfo / networkInfo / messageDescriptionInfo / callEventDetails / auditControlInfo`; lazy tree, batch sections expand fully on click |
+| Data Dictionary | Description / Derivation / Conditionality / Values / Validations / ASN.1 Definition / Parent Types; available for TAP, RAP and NRTRDE types |
+| Editing | Value and HEX editing, clone, delete; schema-driven insertion of child/sibling elements (placed in SEQUENCE order, duplicate fields rejected); modified values highlighted; `Ctrl+S` overwrites the original file name in place |
+| Validation | Structure, accounting, network, events, timestamps, audit reconciliation, BCD syntax and duplicates; findings are clickable; profiles allow per-rule severity/off, duration threshold, charge tolerance and duplicate detection toggle |
+| Statistics | Per-event-type counts, charges and durations, reconciled with `AuditControlInfo.totalCharge` and `totalTaxValue` |
+| File operations | Merge (release-safe), split, export CSV/JSON/XML/listing/statistics; listing import (own format); batch folder scan (CLI + UI, CSV/Excel); generate RAP1.05 return files (`SevereReturn` / `FatalReturn`) |
+| Display | BCD alias fields such as `CallingNumber` and `CalledNumber` are decoded through their alias chain (no mojibake); `recEntityCode` is resolved against `NetworkInfo.recEntityInfo`, e.g. `2 (MSC 1, 12844440025)` |
+| Navigation | `Ctrl+Home` / `Ctrl+End` jump to the first/last call; `Go to Call…` by index |
+| Performance | 168,605 nodes / 3,883 records: open 1.2 s, switch call 8 ms, validate 0.27 s |
+| Delivery | Electron desktop app, browser mode, CLI, REST API |
 
-## 截图
+## Screenshots
 
-| 大文件浏览（168k 节点） | 文件统计与审计勾稽 |
+| Large file (168k nodes) | File statistics and audit reconciliation |
 | --- | --- |
-| ![大文件](docs/ui-large-file.png) | ![统计](docs/ui-statistics.png) |
+| ![Large file](docs/ui-large-file.png) | ![Statistics](docs/ui-statistics.png) |
 
-| 分组全展开 | 编辑标记与末条跳转 |
+| Batch section fully expanded | Edit marks and last-call jump |
 | --- | --- |
-| ![分组展开](docs/ui-section-expanded.png) | ![编辑标记](docs/ui-edit-highlight.png) |
+| ![Section](docs/ui-section-expanded.png) | ![Edit mark](docs/ui-edit-highlight.png) |
 
-| 插入子/兄弟节点向导 | 直达最后一条话单 |
+| Insert child / sibling wizard | Jump to the last call |
 | --- | --- |
-| ![插入](docs/ui-insert-dialog.png) | ![末条](docs/ui-last-call.png) |
+| ![Insert](docs/ui-insert-dialog.png) | ![Last call](docs/ui-last-call.png) |
 
 ---
 
-## 快速开始
+## Quick start
 
-### 1. 桌面版（推荐，Windows 10/11，目标机器无需 Python）
+### 1. Desktop app (recommended, Windows 10/11, no Python needed)
 
-从 [Releases](https://github.com/zhutou0622/roaming-studio/releases) 下载安装版或便携版：
+Download from [Releases](https://github.com/zhutou0622/roaming-studio/releases):
 
-- `Roaming-Studio-<version>-portable.exe`：便携版，双击即用；
-- `Roaming-Studio-Setup-<version>.exe`：安装版（开始菜单 / 桌面快捷方式）。
+- `Roaming-Studio-<version>-portable.exe` — portable, double-click to run
+- `Roaming-Studio-Setup-<version>.exe` — installer with Start menu and desktop shortcuts
 
-本地构建：
+Build locally:
 
 ```bat
 pip install -r requirements.txt
@@ -95,14 +106,15 @@ npm install
 npm run dist        :: release\Roaming-Studio-Setup-*.exe + portable
 ```
 
-> 首次手动启动开发版：`env -u ELECTRON_RUN_AS_NODE npm start`（某些 IDE 会设置该变量）。
+> If your shell sets `ELECTRON_RUN_AS_NODE=1` (some IDEs do), start with
+> `env -u ELECTRON_RUN_AS_NODE npm start`.
 
-### 2. 浏览器 / 开发模式
+### 2. Browser / development mode
 
 ```bat
 pip install -r requirements.txt
 python run.py                                 :: http://127.0.0.1:8765
-python run.py --open samples\demo.tap3        :: 启动即加载文件
+python run.py --open samples\demo.tap3        :: load a file at startup
 ```
 
 ### 3. CLI
@@ -117,170 +129,186 @@ python -m tap3studio.cli dump samples\demo.tap3 --limit 80
 python -m tap3studio.cli merge a.tap3 b.tap3 --out merged.tap3
 python -m tap3studio.cli split samples\demo.tap3 --prefix part_ --chunk 100
 python -m tap3studio.cli export samples\demo.tap3 --fmt csv --out records.csv
-python -m tap3studio.cli batch "D:	ap_in" --pattern "*.tap3" --csv scan.csv --xlsx scan.xlsx
+python -m tap3studio.cli batch "D:\tap_in" --pattern "*.tap3" --csv scan.csv --xlsx scan.xlsx
 python -m tap3studio.cli rap samples\demo.tap3 --out return_RAP.rap --errors-only
 python -m tap3studio.cli import-listing records.lis --out imported.tap3
 python -m tap3studio.cli validate file.tap3 --profile profiles/operator-a.json
 ```
 
-`samples/demo.tap3` 由内置生成器产生（MO / MT / GPRS 混合，带完整审计组），可直接用于试用与测试。
+`samples/demo.tap3` is produced by the built-in generator (mixed MO / MT / GPRS with a complete
+audit group) and can be used for demos and tests.
 
 ---
 
-## 支持的格式
+## Supported formats
 
-| 文件 | 状态 |
+| Format | Status |
 | --- | --- |
-| TAP3（release 1–4、9–12） | ✅ 结构化浏览/编辑/校验；TAP3.01–3.12 模块随包，按 release 自动选择 |
-| RAP1（release 1–5） | ✅ 专用 schema：结构化浏览/编辑/字典；校验规则暂只针对 TAP3（批量巡检中标记 SKIPPED） |
-| NRTRDE 2.1 | ✅ 专用 schema：结构化浏览/编辑/字典；同样暂不做字段级校验 |
-| Listing（自有格式） | ✅ 导出；导入按记录属性重建骨架 |
-| Tap3Info XML / CSV / JSON | ✅ 导出 |
+| TAP3 (releases 1–4, 9–12) | ✅ Structured browsing/editing/validation; TAP3.01–3.12 modules bundled and selected by release |
+| RAP1 (releases 1–5) | ✅ Dedicated schema: browsing/editing/dictionary; field-level validation currently targets TAP3 (batch scan marks RAP files as SKIPPED) |
+| NRTRDE 2.1 | ✅ Dedicated schema: browsing/editing/dictionary; no field-level validation yet |
+| Listing (own format) | ✅ Export; import rebuilds a TAP3 skeleton from record attributes |
+| Tap3Info XML / CSV / JSON | ✅ Export |
 
-> 任意 BER 文件都能以通用 TLV 树打开；schema 未覆盖的字段会带标注告警，而不是解码失败。
+> Any BER file can still be opened as a generic TLV tree; fields outside the schema are annotated
+> with warnings instead of failing the decode.
 
 ---
 
-## 架构
+## Architecture
 
 ```
 TapStudio/
-├─ run.py                    # uvicorn 启动器（可选预打开文件）
-├─ server_entry.py           # PyInstaller 入口
+├─ run.py                    # uvicorn launcher (optional pre-open file)
+├─ server_entry.py           # PyInstaller entry point
 ├─ tap3studio/
-│  ├─ asn1model.py           # TD.57 ASN.1 解析器 → 类型模型
-│  ├─ ber.py                 # BER 编解码（保留 tag / 偏移 / 不定长）
-│  ├─ tapfile.py             # Tap3Document：标注、事件、编辑、导出、修改标记
-│  ├─ builder.py             # schema + dict → 合法 TAP3 子树
-│  ├─ generator.py           # 合成 TAP3.11 测试文件
-│  ├─ dictionary.py          # TD.57 词条 / 码表 / 校验表 / ASN.1 渲染
-│  ├─ validate.py            # 校验规则引擎
-│  ├─ ops.py                 # 合并 / 拆分 / Listing 导入
-│  ├─ server.py              # FastAPI REST + 静态前端
-│  └─ schema/                # TAP0301–0312、RAP0101–0105、NRT0201（15 个 ASN.1 模块）
-├─ web/                      # 经典 Win32 风格前端（无构建步骤）
-├─ desktop/                  # Electron 外壳（main / backend / preload / tests）
-├─ tests/                    # 29 个单元与性能回归测试
-└─ docs/                     # 截图、性能与修复记录
+│  ├─ asn1model.py           # TD.57 ASN.1 parser → type model
+│  ├─ ber.py                 # BER codec (tag / offset / indefinite length preserved)
+│  ├─ tapfile.py             # Tap3Document: annotation, events, editing, export, marks
+│  ├─ builder.py             # schema + dict → valid TAP3 subtrees
+│  ├─ generator.py           # synthetic TAP3.11 test files
+│  ├─ dictionary.py          # TD.57 text / code lists / validation tables / ASN.1 rendering
+│  ├─ validate.py            # validation rule engine
+│  ├─ rap.py                 # validation findings → RAP1.05 return file
+│  ├─ batch.py               # batch scanning and CSV/Excel summaries
+│  ├─ ops.py                 # merge / split / listing import
+│  ├─ server.py              # FastAPI REST + static frontend
+│  └─ schema/                # TAP0301–0312, RAP0101–0105, NRT0201 (15 modules)
+├─ web/                      # classic Win32-style frontend (no build step)
+├─ desktop/                  # Electron shell (main / backend / preload / tests)
+├─ tests/                    # 65 unit and performance regression tests
+└─ docs/                     # screenshots, performance and fix notes
 ```
 
-### 关键设计
+### Design principles
 
-1. **Schema 驱动**：解析 TD.57 的 ASN.1 文本得到 tag → 字段名/类型映射；先用原始 TLV 嗅探 `releaseVersionNumber` 选模块，只在 mismatch 偏高时才回退另一模块。
-2. **字节级保真**：节点保留 tag class/num、偏移、原始 payload 与 `indefinite` 标记；改值只替换目标 payload，未改动文件 `to_bytes() == 原始字节`（含不定长元素）。
-3. **CHOICE 线上形态**：`[APPLICATION 427] CHOICE` 等类型在报文中直接以被选分支 tag 出现，解码器同时接受外层 tag 与分支 tag；UI 还原“字段组 + 选中分支”两级。
-4. **大文件优先**：header 走名字索引 + 缓存；节点检查器只回浅层数据；`/api/tree` 按节点类型限深并设 20k 节点预算；左树分块 + 滚动续载。
-5. **无状态前端 + REST**：编辑、校验、合并、导出全部可脚本调用，便于接入批处理。
+1. **Schema driven** — parse TD.57 ASN.1 text into a tag → field/type map; sniff
+   `releaseVersionNumber` before selecting a module and only fall back when the mismatch is high.
+2. **Byte fidelity** — every node keeps tag class/number, offset, payload and `indefinite` flag;
+   editing replaces only the target payload, and untouched files re-encode to the original bytes.
+3. **Wire form and value semantics** — CHOICE values carry the chosen alternative's tag; BCD,
+   numeric and HexString values are resolved through the alias + tag chain
+   (`CallingNumber → AddressStringDigits → BCDString`).
+4. **Large-file first** — header name index + cache, shallow node details, `/api/tree` depth
+   limits with a 20k node budget, chunked navigation with incremental loading.
+5. **Stateless frontend + REST** — every operation can be scripted through HTTP.
 
 ---
 
-## 性能（实测）
+## Performance (measured)
 
-样本：1.08 MB TAP3.12，**168,605 个 ASN.1 节点 / 3,883 条话单**。
+Sample: 1.08 MB TAP3.12, **168,605 ASN.1 nodes / 3,883 call records**.
 
-| 操作 | 优化前 | 优化后 |
+| Operation | Before | After |
 | --- | --- | --- |
-| 打开文件 | 2.0 s | **1.2 s** |
-| header 计算（state/nav/save） | 4.3 s / 次 | **< 1 ms** |
-| 打开 `callEventDetails` | 65.6 MB JSON，界面卡死 | **0.34 s / 3,884 行** |
-| 节点检查器（根节点） | 70.7 MB JSON | **0.7 KB** |
-| 左树 3,883 行 | 一次性建 DOM | **400 行/块 + 滚动续载** |
-| 未修改另存 | 多 1 字节 | **字节级一致** |
+| Open file | 2.0 s | **1.2 s** |
+| header calculation (state/nav/save) | 4.3 s per call | **< 1 ms** |
+| Open `callEventDetails` | 65.6 MB JSON, UI freeze | **0.34 s / 3,884 rows** |
+| Node details (root) | 70.7 MB JSON | **0.7 KB** |
+| Navigation tree (3,883 rows) | one-shot DOM | **400 rows per chunk + scroll loading** |
+| Save untouched file | 1 byte larger | **byte-identical** |
 
-完整根因、复测脚本与交互修复记录见 [docs/performance.md](docs/performance.md)。
+Root causes, reproduction scripts and interaction fixes: [docs/performance.md](docs/performance.md)
+(English summary + Chinese details).
 
 ---
 
-## 校验规则
+## Validation rules
 
-| 组 | 代码 | 示例 |
+| Group | Codes | Examples |
 | --- | --- | --- |
-| 结构 | `TAP-001..008` | batchControlInfo 缺失、必填项缺失（`fileTypeIndicator` 按 TD.57 为可选）、fileSequenceNumber 非 5 位、release 越界、schema 未映射元素 |
-| 账务 | `ACC-001..003` | accountingInfo / localCurrency / tapDecimalPlaces 缺失、dp 越界 |
-| 网络 | `NET-001..003` | utcTimeOffsetInfo 缺失、偏移格式错误、引用未声明的 utcTimeOffsetCode |
-| 事件 | `EVT-001..009` | 事件为空、未知类型、MO/MT/GPRS 必填组缺失、时长异常、负金额、无计费信息、疑似重复 |
-| 时间 | `TS-001..003` | 本地时间戳非 `CCYYMMDDhhmmss`、UTC 偏移非 `±hhmm` |
-| 审计 | `AUD-001..005` | auditControlInfo 缺失、`callEventDetailsCount` 与记录数不符、`totalCharge` 与明细合计不符、earliest > latest |
-| 语法 | `BCD-001` | IMSI / MSISDN / IMEI 非 BCD 数字 |
+| Structure | `TAP-001..008` | missing batchControlInfo, missing mandatory items (`fileTypeIndicator` is optional per TD.57), bad fileSequenceNumber, unsupported release, unmapped schema elements |
+| Accounting | `ACC-001..003` | missing accountingInfo / localCurrency / tapDecimalPlaces, dp out of range |
+| Network | `NET-001..003` | missing utcTimeOffsetInfo, malformed offsets, undeclared utcTimeOffsetCode |
+| Events | `EVT-001..009` | empty event list, unknown type, missing mandatory groups, implausible duration, negative charge, missing charge info, suspected duplicates |
+| Timestamps | `TS-001..003` | local timestamp not `CCYYMMDDhhmmss`, UTC offset not `±hhmm` |
+| Audit | `AUD-001..007` | missing auditControlInfo, `callEventDetailsCount` mismatch, `totalCharge` mismatch (de-duplicated ChargeDetail sum reported as AUD-006), `totalTaxValue` mismatch (AUD-007), earliest > latest |
+| Syntax | `BCD-001` | IMSI / MSISDN / IMEI not valid BCD |
 
-CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
+`tap3studio.cli validate` exits with code 1 when errors are present, so it can gate a pipeline.
 
 ---
 
-## REST API（节选）
+## REST API (selection)
 
-| 方法 | 路径 | 作用 |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/state` | 当前文件摘要 + 根节点 |
-| POST | `/api/open` | `{path}` 打开；留空生成测试文件 |
-| POST | `/api/tree` | `{id,depth}` 懒加载子树（20k 节点预算） |
-| GET | `/api/node/{id}` | 节点详情（浅层 + 祖先链 + 原始字节） |
-| POST | `/api/value` / `/api/delete` / `/api/clone` | 编辑操作 |
-| GET | `/api/insert/options?id=` | 当前节点可插入的 schema 字段/分支 |
-| POST | `/api/insert` | 按 schema 插入子/兄弟节点 |
-| POST | `/api/save` | 按给定路径原地覆盖（不改名、不补扩展名） |
-| GET/POST | `/api/validate` | 全量校验（POST 可带 `profile`） |
-| GET | `/api/rules` | 规则目录、默认严重级别与阈值 |
-| POST | `/api/import-listing` | 从 Listing 文本重建 TAP3 骨架 |
-| POST | `/api/batch` / `/api/batch/export` | 批量巡检 / 导出 CSV 或 Excel |
-| POST | `/api/rap` | 由校验结果生成 RAP1.05 返回文件 |
-| GET | `/api/statistics` | 按类型统计 + 审计勾稽 |
-| GET | `/api/dictionary?type=&field=` | TD.57 词条 |
-| GET | `/api/events` / `/api/hex` / `/api/search` | 记录表 / 字节 / 搜索 |
-| POST | `/api/replace` / `/api/merge` / `/api/split` | 批量替换 / 合并 / 拆分 |
-| GET | `/api/export?fmt=csv\|json\|xml\|listing\|stat` | 导出 |
+| GET | `/api/state` | Current file summary + root node |
+| POST | `/api/open` | Open `{path}`; empty generates a test file |
+| POST | `/api/tree` | Lazy subtree `{id,depth}` (20k node budget) |
+| GET | `/api/node/{id}` | Shallow node details + ancestor chain + raw bytes |
+| POST | `/api/value` / `/api/delete` / `/api/clone` | Editing operations |
+| GET | `/api/insert/options?id=` | Schema fields/alternatives insertable at a node |
+| POST | `/api/insert` | Insert a child/sibling element |
+| POST | `/api/save` | Overwrite the given path (no renaming, no extension added) |
+| GET/POST | `/api/validate` | Full validation (POST accepts `profile`) |
+| GET | `/api/rules` | Rule catalogue, default severities and thresholds |
+| GET | `/api/rec-entities` | recEntityCode → entity mapping |
+| POST | `/api/import-listing` | Rebuild a TAP3 skeleton from listing text |
+| POST | `/api/batch` / `/api/batch/export` | Batch scan / export CSV or Excel |
+| POST | `/api/rap` | Generate a RAP1.05 return file from findings |
+| GET | `/api/statistics` | Per-type statistics + audit reconciliation |
+| GET | `/api/dictionary?type=&field=` | TD.57 dictionary entry |
+| GET | `/api/events` / `/api/hex` / `/api/search` | Record table / bytes / search |
+| POST | `/api/replace` / `/api/merge` / `/api/split` | Replace / merge / split |
+| GET | `/api/export?fmt=csv\|json\|xml\|listing\|stat` | Export |
 
-完整的 20+ 端点与请求体见 `tap3studio/server.py`。
+See `tap3studio/server.py` for the complete endpoint list and request bodies.
 
 ---
 
-## 测试
+## Testing
 
 ```bat
-python -m unittest discover -s tests -v          :: 57 项（含大文件性能/保存命名/插入/规则配置/批量巡检/多 schema/RAP/Listing）
+python -m unittest discover -s tests -v          :: 65 tests (performance/save/insert/profiles/batch/schemas/RAP/listing/display)
 python -m tap3studio.cli validate samples\demo.tap3
 
 cd desktop
-npx electron uitest.js                            :: 14 项基础 UI 回归
-npx electron uitest-large.js "<大 TAP 文件>"      :: 24 项（右键/Find/编辑/统计/末条跳转/保存命名）
-npx electron uitest-sections.js "<大 TAP 文件>"   :: 10 项（分组全展开）
-npx electron perf.js "<大 TAP 文件>"              :: 性能探针
+npx electron uitest.js                            :: 14 basic UI checks
+npx electron uitest-large.js "<large TAP file>"   :: 24+ checks (context menu/Find/edit/stats/last call/save/RAP/batch/display)
+npx electron uitest-sections.js "<large TAP file>":: 10 checks (batch sections expand)
+npx electron perf.js "<large TAP file>"           :: performance probe
 ```
 
-CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在 push / PR 时运行 Python 单测与前端语法检查。
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs Python tests, frontend syntax checks
+and a backend launch smoke test on every push and pull request.
 
 ---
 
-## 路线图
+## Roadmap
 
-- [x] 插入子/兄弟节点向导（`/api/insert/options` + `/api/insert`，按 SEQUENCE 顺序落位并拒绝重复字段）
-- [x] TAP3.01–3.12 / RAP1.01–1.05 / NRTRDE 2.1 专用 schema（按 release 自动选模块、字典可查）
-- [x] 校验失败自动生成 RAP 返回文件（RapBatchControlInfo / SevereReturn / FatalReturn / RapAuditControlInfo）
-- [x] 校验规则配置化（JSON 规则集、severity/off、阈值、error override 语义）
-- [x] 批量目录巡检 + 汇总报表（CLI + UI，CSV / Excel）
-- [x] Listing 导出 / 导入闭环（Roaming Studio 自有 listing 格式）
-- [ ] **原生** TAP3 Listing 列位解析（需要真实运营商 `.lis` 样本；自有格式已可导入）
-- [x] Electron 桌面封装 + PyInstaller 冻结后端
-- [x] 大文件性能优化与交互回归测试
+- [x] Insert child/sibling wizard (SEQUENCE-ordered, duplicate fields rejected)
+- [x] Dedicated schemas for TAP3.01–3.12, RAP1.01–1.05 and NRTRDE 2.1
+- [x] Generate RAP return files from validation findings (`SevereReturn` / `FatalReturn` / audit)
+- [x] Configurable validation profiles (JSON rules, severity/off, thresholds, error overrides)
+- [x] Batch folder scan + CSV/Excel reports (CLI + UI)
+- [x] Listing export/import round trip (own format)
+- [x] Electron desktop packaging + frozen backend
+- [x] Large-file performance work and interaction regressions
+- [ ] **Native** operator `.lis` column parser (needs a real listing sample)
 
 ---
 
-## 背景与声明
+## Background and disclaimer
 
-本项目是独立实现，与 **Semantix**、**XINTEC**、**INFOBRAIN AG** 及任何 TAP3 商业编辑器厂商
-无隶属或授权关系。项目中的界面布局参考了漫游结算行业常见的桌面工具形态，代码、schema 解析器、
-校验规则与前端均为自行实现；未复制、反编译或再分发任何第三方程序的代码或资源。
+This project is an independent implementation. It is not affiliated with, endorsed by or licensed
+by **Semantix**, **XINTEC**, **INFOBRAIN AG** or any commercial TAP3 editor vendor. The UI follows
+the familiar desktop layout used in roaming settlement tools; the code, schema parser, validation
+rules and frontend are all original work. No third-party program code or assets are copied,
+decompiled or redistributed.
 
-TAP3 / TD.57 / TADIG 是 **GSMA** 的规范与商标；本仓库内置的 ASN.1 模块与词条文本来自公开规范，
-仅用于互操作性实现。请以 GSMA 官方发布版本为准。
+TAP3 / TD.57 / TADIG are GSMA specifications and trademarks. The bundled ASN.1 modules and
+dictionary text come from public specifications and are used for interoperability. Always defer to
+the official GSMA releases, and verify redistribution terms for the schema text before publishing.
 
-⚠️ 当前为 **beta**：请在测试环境验证后再用于生产结算流程。仓库不包含任何运营商客户数据，
-`samples/` 中的文件由内置生成器合成。
+⚠️ **Beta**: validate against your own test files before using it in production settlement.
+The repository contains no operator customer data; files under `samples/` are synthetic.
 
-## 贡献
+## Contributing
 
-欢迎 issue / PR：开发环境、测试要求与代码风格见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+([中文](CONTRIBUTING.zh-CN.md)) for the development setup, test commands and code conventions.
 
-## 许可证
+## License
 
 [MIT](LICENSE) © 2026 Roaming Studio contributors

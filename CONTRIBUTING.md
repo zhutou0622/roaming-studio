@@ -1,12 +1,14 @@
 # Contributing
 
-感谢参与 Roaming Studio（TAP3 Studio）。以下是最小开发闭环。
+**English** | [简体中文](CONTRIBUTING.zh-CN.md)
 
-## 环境
+Thanks for helping with Roaming Studio (TAP3 Studio). This is the minimal development loop.
 
-- Python **3.9+**（推荐 3.11）
-- Node.js **20+**（仅桌面壳与前端测试需要）
-- Windows 10/11 用于打包桌面版；Web/CLI 跨平台
+## Environment
+
+- Python **3.9+** (3.11 recommended)
+- Node.js **20+** (desktop shell and frontend tests only)
+- Windows 10/11 for packaging the desktop app; web/CLI run everywhere
 
 ```bash
 python -m venv .venv
@@ -16,24 +18,24 @@ pip install -r requirements.txt
 cd desktop && npm install && cd ..
 ```
 
-## 目录速览
+## Repository map
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `tap3studio/` | 解析、编辑、校验、字典、REST 服务、CLI |
-| `web/` | 经典 Win32 风格前端（无构建步骤，ES5+ 浏览器脚本） |
-| `desktop/` | Electron 外壳、PyInstaller 后端打包、UI 回归脚本 |
-| `tests/` | 单元与性能回归（大文件样本缺失时自动跳过） |
-| `docs/` | 截图、性能与修复记录 |
+| `tap3studio/` | parsing, editing, validation, dictionary, REST service, CLI |
+| `web/` | classic Win32-style frontend (no build step) |
+| `desktop/` | Electron shell, PyInstaller backend packaging, UI regression scripts |
+| `tests/` | unit and performance regressions (large-file fixtures are skipped when absent) |
+| `docs/` | screenshots, performance and fix notes |
 
-## 开发运行
+## Development
 
 ```bash
 python run.py --open samples/demo.tap3
-cd desktop && npm start            # 桌面壳（关闭系统 ELECTRON_RUN_AS_NODE）
+cd desktop && npm start            # unset ELECTRON_RUN_AS_NODE first
 ```
 
-## 提交前必跑
+## Before committing
 
 ```bash
 python -m unittest discover -s tests -v
@@ -41,24 +43,27 @@ node --check web/app.js
 
 cd desktop
 npx electron uitest.js
-# 有真实大文件时：
+# with a large TAP file:
 npx electron uitest-large.js "<file>"
 npx electron uitest-sections.js "<file>"
 ```
 
-## 代码约定
+## Conventions
 
-- Python：标准库优先；新解析/校验逻辑必须有单元测试；不要在主流程里做全表扫描（参考 `docs/performance.md`）。
-- 前端：无框架、无构建步骤；DOM 行数要有上限或分块；所有弹层关闭逻辑需覆盖点击外部 / `Esc` / 滚动。
-- 修改 schema 或字典文本时，注明来源（TD.57 章节），不要引入非公开文档内容。
-- 不提交任何客户 TAP 数据、`dist/`、`release/`、`node_modules/`。
+- Python: prefer the standard library; new parsing/validation logic needs unit tests; do not add
+  full-table scans on hot paths (see `docs/performance.md`).
+- Frontend: no framework, no build step; cap or chunk DOM row counts; every popup must close on
+  outside click, `Esc` and scroll.
+- When changing schemas or dictionary text, cite the TD.57 source and do not introduce
+  non-public material.
+- Never commit customer TAP data, `dist/`, `release/` or `node_modules/`.
 
-## PR 检查清单
+## Pull request checklist
 
-- [ ] 新增/修改行为有测试（Python 或 `desktop/uitest*.js`）
-- [ ] `python -m unittest discover -s tests` 全绿
-- [ ] 前端 `node --check` 通过，无控制台报错
-- [ ] 更新了相关文档（README / docs / desktop/README）
-- [ ] 不含凭证、客户数据或大文件
+- [ ] New or changed behaviour has tests (Python or `desktop/uitest*.js`)
+- [ ] `python -m unittest discover -s tests` passes
+- [ ] `node --check` passes and the console shows no renderer errors
+- [ ] Relevant docs updated (README / docs / desktop/README)
+- [ ] No credentials, customer data or large files
 
-提交信息建议 `type(scope): summary`（如 `fix(ui): keep call view after edit`）。
+Commit messages: `type(scope): summary`, e.g. `fix(ui): keep call view after edit`.
