@@ -1,7 +1,7 @@
 {
   "name": "tap3-studio-desktop",
   "productName": "Roaming Studio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Roaming Studio — TAP3/RAP/NRTRDE viewer, editor and validator (Electron shell)",
   "author": "TAP3 Studio",
   "license": "MIT",
