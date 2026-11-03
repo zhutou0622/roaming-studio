@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-from . import generator, ops, tapfile, validate
+from . import batch, generator, ops, rules, tapfile, validate
 
 
 def cmd_info(args):
@@ -40,7 +40,8 @@ def cmd_info(args):
 
 def cmd_validate(args):
     doc = tapfile.open_document(args.file)
-    r = validate.validate(doc)
+    profile = rules.normalize(path=args.profile) if args.profile else None
+    r = validate.validate(doc, profile)
     if args.json:
         print(json.dumps(r, ensure_ascii=False, indent=2))
     else:
@@ -60,6 +61,27 @@ def cmd_events(args):
               f"charge={r.get('charge')}")
     print(f"-- {len(rows)} records")
     return 0
+
+
+def cmd_batch(args):
+    profile = rules.normalize(path=args.profile) if args.profile else None
+    rows = batch.scan(args.paths, profile, args.pattern)
+    head = f"{'File':<44}{'Release':<9}{'Recs':>6}{'Err':>5}{'Warn':>6}{'Status':>8}"
+    print(head)
+    print("-" * len(head))
+    for row in rows:
+        print(f"{row['file'][:42]:<44}{row['release']:<9}{row['records']:>6}"
+              f"{row['errors']:>5}{row['warnings']:>6}{row['status']:>8}")
+    total = batch.summary(rows)
+    print("-" * len(head))
+    print(f"files={total['files']} ok={total['ok']} errors={total['with_errors']} "
+          f"failed={total['failed']} records={total['records']} "
+          f"findings={total['errors']}E/{total['warnings']}W")
+    if args.csv:
+        print("csv:", batch.write_csv(rows, args.csv))
+    if args.xlsx:
+        print("xlsx:", batch.write_xlsx(rows, args.xlsx))
+    return 1 if (total["with_errors"] or total["failed"]) else 0
 
 
 def cmd_export(args):
@@ -146,10 +168,20 @@ def main(argv=None):
     p = sub.add_parser("info", help="file summary"); p.add_argument("file"); p.set_defaults(func=cmd_info)
 
     p = sub.add_parser("validate", help="run validation rules"); p.add_argument("file")
-    p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_validate)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--profile", default="", help="validation profile JSON")
+    p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("events", help="list call events"); p.add_argument("file")
     p.add_argument("--limit", type=int, default=50); p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("batch", help="scan a folder of TAP files")
+    p.add_argument("paths", nargs="+")
+    p.add_argument("--pattern", default="*")
+    p.add_argument("--profile", default="")
+    p.add_argument("--csv", default="")
+    p.add_argument("--xlsx", default="")
+    p.set_defaults(func=cmd_batch)
 
     p = sub.add_parser("export", help="export csv/json/xml/listing/stat"); p.add_argument("file")
     p.add_argument("--fmt", default="csv"); p.add_argument("--out", required=True); p.set_defaults(func=cmd_export)

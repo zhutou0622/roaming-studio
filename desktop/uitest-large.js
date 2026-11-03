@@ -216,6 +216,41 @@ app.whenReady().then(async () => {
       /152\.49912 USD|152\.49912/.test(stat.text),
       stat.text.split("\n").slice(0, 3).join(" | "));
 
+    /* ---------------- validation profile ---------------- */
+    const prof = await evalJs(`(async () => {
+      await runCommand('profile');
+      const dlg = document.querySelector('#modalLayer');
+      const open = dlg.classList.contains('on');
+      const selectCount = dlg.querySelectorAll('select').length;
+      const rows = Array.from(dlg.querySelectorAll('table tr'));
+      const aud = rows.find(r => r.textContent.includes('AUD-004'));
+      const sel = aud ? aud.querySelector('select') : null;
+      if (sel) { sel.value = 'off'; }
+      const apply = Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Apply & Validate');
+      if (apply) apply.click();
+      await new Promise(r => setTimeout(r, 1500));
+      const title = document.querySelector('#modalLayer .dlg-title').textContent;
+      const summary = (document.querySelector('#modalLayer .dlg-body > div') || {}).textContent || '';
+      const hasAud = /AUD-004/.test(document.querySelector('#modalLayer .dlg-table').innerText);
+      const close = Array.from(document.querySelectorAll('#modalLayer .dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Close');
+      if (close) close.click();
+      return { open, selects: selectCount, title, summary, hasAud };
+    })()`);
+    check("validation profile dialog", prof.open && prof.selects >= 30, JSON.stringify({open: prof.open, selects: prof.selects}));
+    check("profile override suppresses AUD-004",
+      prof.title.includes("Validations") && /profile: custom/.test(prof.summary) && !prof.hasAud,
+      prof.summary.slice(0, 120));
+
+    // reset the profile for the remaining tests
+    await evalJs(`(async () => {
+      await runCommand('profile');
+      const reset = Array.from(document.querySelectorAll('#modalLayer .dlg-buttons button'))
+        .find(b => b.textContent.trim() === 'Reset');
+      if (reset) reset.click();
+      return true; })()`);
+
     const statusBar = await evalJs("document.querySelector('#statusInfo').textContent");
     check("status bar shows records and charge separately",
       /records: 3883/.test(statusBar) && /charge: .*USD/.test(statusBar) &&

@@ -44,9 +44,9 @@ the target machine), a local REST API and a CLI.
 | 浏览 | `DataInterChange → transferBatch → batchControlInfo / accountingInfo / networkInfo / messageDescriptionInfo / callEventDetails / auditControlInfo` 导航；ASN.1 树按需展开；选中分组自动全展开 |
 | 数据字典 | 描述 / Derivation / Conditionality / Values 码表 / Validations 表 / ASN.1 Definition / Parent Types，随节点切换 |
 | 编辑 | 值编辑、HEX 写入、克隆、删除；**schema 驱动插入子/兄弟节点**（按 SEQUENCE 字段顺序落位、拒绝重复字段）；修改字段浅黄高亮；保持当前话单视图；`Ctrl+S` 原地覆盖、不改文件名 |
-| 校验 | 结构、账务、网络、事件、时间戳、审计勾稽、BCD 语法、重复记录；报告可点击定位 |
+| 校验 | 结构、账务、网络、事件、时间戳、审计勾稽、BCD 语法、重复记录；报告可点击定位；**规则配置化**（逐条 severity/off、时长阈值、金额容差、重复检测开关） |
 | 统计 | 按事件类型统计条数/金额/时长，并与 `AuditControlInfo.totalCharge` 勾稽 |
-| 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出 |
+| 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出；**批量目录巡检**（CSV / Excel 汇总） |
 | 导航 | `Ctrl+Home` / `Ctrl+End` 直达首/末话单；`Go to Call…` 按序号跳转 |
 | 性能 | 168,605 节点 / 3,883 记录：打开 1.2 s、切换话单 8 ms、校验 0.27 s |
 | 交付形态 | Electron 桌面版（Windows，内置后端，无需 Python）、浏览器模式、CLI |
@@ -117,6 +117,8 @@ python -m tap3studio.cli dump samples\demo.tap3 --limit 80
 python -m tap3studio.cli merge a.tap3 b.tap3 --out merged.tap3
 python -m tap3studio.cli split samples\demo.tap3 --prefix part_ --chunk 100
 python -m tap3studio.cli export samples\demo.tap3 --fmt csv --out records.csv
+python -m tap3studio.cli batch "D:	ap_in" --pattern "*.tap3" --csv scan.csv --xlsx scan.xlsx
+python -m tap3studio.cli validate file.tap3 --profile profiles/operator-a.json
 ```
 
 `samples/demo.tap3` 由内置生成器产生（MO / MT / GPRS 混合，带完整审计组），可直接用于试用与测试。
@@ -215,7 +217,8 @@ CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
 | GET | `/api/insert/options?id=` | 当前节点可插入的 schema 字段/分支 |
 | POST | `/api/insert` | 按 schema 插入子/兄弟节点 |
 | POST | `/api/save` | 按给定路径原地覆盖（不改名、不补扩展名） |
-| GET/POST | `/api/validate` | 全量校验 |
+| GET/POST | `/api/validate` | 全量校验（POST 可带 `profile`） |
+| GET | `/api/rules` | 规则目录、默认严重级别与阈值 |
 | GET | `/api/statistics` | 按类型统计 + 审计勾稽 |
 | GET | `/api/dictionary?type=&field=` | TD.57 词条 |
 | GET | `/api/events` / `/api/hex` / `/api/search` | 记录表 / 字节 / 搜索 |
@@ -229,7 +232,7 @@ CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
 ## 测试
 
 ```bat
-python -m unittest discover -s tests -v          :: 29 项（含大文件性能/保存命名回归，样本缺失时跳过）
+python -m unittest discover -s tests -v          :: 42 项（含大文件性能/保存命名/插入/规则配置/批量巡检）
 python -m tap3studio.cli validate samples\demo.tap3
 
 cd desktop
@@ -248,8 +251,8 @@ CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在 push / PR 时运
 - [x] 插入子/兄弟节点向导（`/api/insert/options` + `/api/insert`，按 SEQUENCE 顺序落位并拒绝重复字段）
 - [ ] RAP1 / TAP3.12 专用 schema；校验失败自动生成 RAP 返回文件
 - [ ] 原生 TAP3 Listing 列位解析（运营商 `.lis`）
-- [ ] 校验规则配置化（JSON 规则集、阈值、error override）
-- [ ] 批量目录巡检 + 汇总报表
+- [x] 校验规则配置化（JSON 规则集、severity/off、阈值、error override 语义）
+- [x] 批量目录巡检 + 汇总报表（CLI `batch`，CSV / Excel）
 - [x] Electron 桌面封装 + PyInstaller 冻结后端
 - [x] 大文件性能优化与交互回归测试
 

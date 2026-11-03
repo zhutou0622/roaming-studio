@@ -57,6 +57,7 @@ const state = {
   rows: new Map(),
   dict: null,
   prefs: Object.assign({ showScale: true, showTags: false }, JSON.parse(localStorage.getItem("rs.prefs") || "{}")),
+  profile: JSON.parse(localStorage.getItem("rs.profile") || "null"),
   panels: { nav: true, dict: true },
 };
 
@@ -149,6 +150,7 @@ const MENUS = [
     { label: "Validation Rules...", cmd: "rules" },
   ] },
   { label: "Configure", items: [
+    { label: "Validation Profile...", cmd: "profile" },
     { label: "Preferences...", cmd: "prefs" },
   ] },
   { label: "Windows", items: [
@@ -807,6 +809,7 @@ async function runCommand(cmd) {
       case "statistics": return await cmdStatistics();
       case "validateNode": return await cmdValidate("node");
       case "rules": return cmdRules();
+      case "profile": return await cmdProfileEditor();
       case "prefs": return cmdPrefs();
       case "about": return cmdAbout();
       case "aboutDict": return alertBox("Data Dictionary Source",
@@ -1212,11 +1215,13 @@ async function cmdStatistics() {
 
 async function cmdValidate(scope) {
   if (!state.open) { alertBox("Validation", "Open a file first."); return; }
-  const r = await api("/api/validate");
+  const r = await api("/api/validate", "POST", { profile: state.profile });
   const box = el("div", "flexcol");
+  const prof = r.profile ? `   profile: ${r.profile}` : "";
+  const suppressed = r.suppressed ? `   suppressed: ${r.suppressed}` : "";
   box.appendChild(el("div", "",
     `${r.records} record(s)   ${r.errors} error(s)   ${r.warnings} warning(s)   ` +
-    `charge total ${r.chargeSumScaled}`));
+    `charge total ${r.chargeSumScaled}${prof}${suppressed}`));
   const wrap = el("div", "dlg-table");
   const t = el("table");
   const head = el("tr");
@@ -1285,6 +1290,97 @@ async function jumpToNode(id) {
   } catch (err) {
     status("cannot jump: " + err.message);
   }
+}
+
+async function cmdProfileEditor() {
+  const cat = await api("/api/rules");
+  const current = state.profile || {};
+  const thresholds = Object.assign({}, cat.thresholds, current.thresholds || {});
+  const overrides = current.rules || {};
+  const box = el("div", "flexcol");
+  box.appendChild(el("div", "muted",
+    "Severity overrides mirror TADIG error overrides: off suppresses a finding."));
+  const trow = el("div", "row");
+  trow.appendChild(el("label", "", "Max duration:"));
+  const duration = el("input"); duration.type = "number"; duration.min = "1";
+  duration.value = thresholds.maxDurationSeconds;
+  trow.appendChild(duration);
+  trow.appendChild(el("label", "", "Charge tol.:"));
+  const tol = el("input"); tol.type = "number"; tol.min = "0";
+  tol.value = thresholds.chargeTolerance;
+  trow.appendChild(tol);
+  const dupLab = el("label", "", "Duplicates");
+  const dup = el("input"); dup.type = "checkbox";
+  dup.checked = !!thresholds.duplicateDetection;
+  trow.appendChild(dup); trow.appendChild(dupLab);
+  box.appendChild(trow);
+
+  const wrap = el("div", "dlg-table");
+  wrap.style.maxHeight = "420px";
+  const t = el("table");
+  const head = el("tr");
+  ["Code", "Rule", "Severity"].forEach((h) => head.appendChild(el("th", "", h)));
+  t.appendChild(head);
+  const selects = {};
+  cat.rules.forEach((rule) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", rule.code));
+    tr.appendChild(el("td", "", rule.title));
+    const td = el("td");
+    const sel = el("select");
+    const def = el("option", "", `default (${rule.severity})`);
+    def.value = "default";
+    sel.appendChild(def);
+    cat.severities.forEach((sev) => {
+      const o = el("option", "", sev);
+      o.value = sev;
+      sel.appendChild(o);
+    });
+    sel.value = overrides[rule.code] || "default";
+    td.appendChild(sel);
+    tr.appendChild(td);
+    selects[rule.code] = sel;
+    t.appendChild(tr);
+  });
+  wrap.appendChild(t);
+  box.appendChild(wrap);
+
+  const collect = () => {
+    const rules = {};
+    Object.entries(selects).forEach(([code, sel]) => {
+      if (sel.value && sel.value !== "default") rules[code] = sel.value;
+    });
+    return {
+      name: current.name || "custom",
+      thresholds: {
+        maxDurationSeconds: parseInt(duration.value || "0", 10) || cat.thresholds.maxDurationSeconds,
+        chargeTolerance: parseInt(tol.value || "0", 10) || 0,
+        duplicateDetection: dup.checked,
+      },
+      rules,
+    };
+  };
+  const apply = () => {
+    state.profile = collect();
+    localStorage.setItem("rs.profile", JSON.stringify(state.profile));
+    closeModal();
+    status(`Validation profile applied (${Object.keys(state.profile.rules).length} override(s))`);
+    return true;
+  };
+  dialog({
+    title: "Validation Profile", width: 720, content: box,
+    buttons: [
+      { label: "Apply & Validate", primary: true, onClick: () => { apply(); setTimeout(() => cmdValidate("all"), 80); } },
+      { label: "Apply", onClick: apply },
+      { label: "Reset", onClick: () => {
+          state.profile = null;
+          localStorage.removeItem("rs.profile");
+          closeModal();
+          status("Validation profile reset to defaults");
+        } },
+      { label: "Cancel" },
+    ],
+  });
 }
 
 function cmdRules() {

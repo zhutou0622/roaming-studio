@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import dictionary as dictionary_mod
-from . import generator, ops, resources, tapfile, validate
+from . import generator, ops, resources, rules, tapfile, validate
 from .tapfile import _int_value
 
 WEB_DIR = resources.resource_path("web")
@@ -66,6 +66,10 @@ class GenReq(BaseModel):
 class MergeReq(BaseModel):
     paths: List[str]
     out: str
+
+
+class ValidateReq(BaseModel):
+    profile: Optional[dict] = None
 
 
 class InsertReq(BaseModel):
@@ -239,16 +243,29 @@ def save(req: SaveReq):
             "original": os.path.basename(path)}
 
 
-@app.api_route("/api/validate", methods=["GET", "POST"])
-def do_validate():
-    doc = _doc()
-    result = validate.validate(doc)
+def _run_validation(doc, profile=None):
+    result = validate.validate(doc, profile)
     by_path = {}
     for node in doc.nodes.values():
         by_path.setdefault(node.path(), node.node_id)
     for f in result["findings"]:
         f["id"] = by_path.get(f.get("path", ""), 0)
     return result
+
+
+@app.get("/api/validate")
+def do_validate():
+    return _run_validation(_doc())
+
+
+@app.post("/api/validate")
+def do_validate_post(req: Optional[ValidateReq] = None):
+    return _run_validation(_doc(), req.profile if req else None)
+
+
+@app.get("/api/rules")
+def rule_catalog():
+    return rules.catalog()
 
 
 @app.get("/api/events")

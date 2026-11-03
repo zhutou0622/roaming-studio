@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional
 
-from . import ber
+from . import ber, rules
 from .tapfile import AMOUNT_TYPES, Finding, Tap3Document, _int_value
 
 REQUIRED_BCI = ["sender", "recipient", "fileSequenceNumber", "fileCreationTimeStamp",
@@ -87,7 +87,11 @@ def _amount_scaled(v: Optional[int], dp: Optional[int]) -> str:
     return f"{v / (10 ** dp):.{dp}f}"
 
 
-def validate(doc: Tap3Document) -> dict:
+def validate(doc: Tap3Document, profile: Optional[dict] = None) -> dict:
+    prof = rules.normalize(profile)
+    max_duration = prof["thresholds"]["maxDurationSeconds"]
+    charge_tolerance = prof["thresholds"]["chargeTolerance"]
+    detect_duplicates = bool(prof["thresholds"].get("duplicateDetection", True))
     out: List[Finding] = []
     dp = doc.decimal_places
     batch = None
@@ -189,7 +193,7 @@ def validate(doc: Tap3Document) -> dict:
         dv = _int_value(dur)
         if dv is None:
             out.append(Finding("warning", "EVT-005", f"{et}: totalCallEventDuration missing", ev.path(), idx))
-        elif dv < 0 or dv > 86400 * 2:
+        elif dv < 0 or dv > max_duration:
             out.append(Finding("error", "EVT-006",
                                f"{et}: implausible totalCallEventDuration {dv}s", ev.path(), idx))
         charges = _nodes_named(ev, "charge")
@@ -209,11 +213,12 @@ def validate(doc: Tap3Document) -> dict:
         key = (et, start[0].children[0].value_text if start and start[0].children else "",
                _nodes_named(ev, "chargeableUnits")[0].value_text if _nodes_named(ev, "chargeableUnits") else "",
                str(ev_charge))
-        if key in seen:
-            out.append(Finding("warning", "EVT-009",
-                               f"{et}: possible duplicate record (start/units/charge identical)",
-                               ev.path(), idx))
-        seen.add(key)
+        if detect_duplicates:
+            if key in seen:
+                out.append(Finding("warning", "EVT-009",
+                                   f"{et}: possible duplicate record (start/units/charge identical)",
+                                   ev.path(), idx))
+            seen.add(key)
         # BCD sanity on subscriber identifiers
         for name in ("imsi", "msisdn", "imei"):
             for node in _nodes_named(ev, name)[:1]:
@@ -242,7 +247,7 @@ def validate(doc: Tap3Document) -> dict:
         tc = _child(audit, "totalCharge")
         if tc is not None:
             claimed = _int_value(tc)
-            if claimed is not None and claimed != total_charge:
+            if claimed is not None and abs(claimed - total_charge) > charge_tolerance:
                 out.append(Finding("error", "AUD-004",
                                    f"totalCharge {_amount_scaled(claimed, dp)} != sum of record charges "
                                    f"{_amount_scaled(total_charge, dp)} (difference "
@@ -257,6 +262,8 @@ def validate(doc: Tap3Document) -> dict:
                                    "earliestCallTimeStamp is later than latestCallTimeStamp",
                                    earliest.path()))
 
+    raw_count = len(out)
+    out = rules.apply(out, prof)
     errors = sum(1 for f in out if f.severity == "error")
     warnings = sum(1 for f in out if f.severity == "warning")
     return {
@@ -265,6 +272,8 @@ def validate(doc: Tap3Document) -> dict:
         "records": len(events),
         "errors": errors,
         "warnings": warnings,
+        "suppressed": max(0, raw_count - len(out)),
+        "profile": prof["name"],
         "findings": [f.to_dict() for f in out],
         "chargeSum": total_charge,
         "chargeSumScaled": _amount_scaled(total_charge, dp),
