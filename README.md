@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![Electron](https://img.shields.io/badge/desktop-Electron%2031-47848F?logo=electron&logoColor=white)](desktop/)
 [![Platform](https://img.shields.io/badge/desktop-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](desktop/)
+[![CI](https://github.com/zhutou0622/roaming-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/zhutou0622/roaming-studio/actions/workflows/ci.yml)
 ![TAP3](https://img.shields.io/badge/TAP3-3.09%20%7C%203.11%20%7C%203.12-success)
 
 ![Roaming Studio](docs/ui-packaged.png)
@@ -66,7 +67,7 @@ the target machine), a local REST API and a CLI.
 
 ### 1. 桌面版（推荐，Windows 10/11，目标机器无需 Python）
 
-从仓库的 **Releases** 页面下载安装版或便携版：
+从 [Releases](https://github.com/zhutou0622/roaming-studio/releases) 下载安装版或便携版：
 
 - `Roaming-Studio-<version>-portable.exe`：便携版，双击即用；
 - `Roaming-Studio-Setup-<version>.exe`：安装版（开始菜单 / 桌面快捷方式）。
