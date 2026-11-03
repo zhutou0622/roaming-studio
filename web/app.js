@@ -119,6 +119,9 @@ const MENUS = [
     { label: "Clone Node", cmd: "clone" },
     { label: "Delete Node", accel: "Del", cmd: "delete" },
     { sep: true },
+    { label: "Insert Child...", cmd: "insertChild" },
+    { label: "Insert Sibling...", cmd: "insertSibling" },
+    { sep: true },
     { label: "Copy Path", cmd: "copyPath" },
     { sep: true },
     { label: "Find...", accel: "Ctrl+F", cmd: "find" },
@@ -785,6 +788,8 @@ async function runCommand(cmd) {
       case "refresh": return await refreshAll();
       case "editValue": return await cmdEditValue();
       case "clone": return await cmdClone();
+      case "insertChild": return await cmdInsert("child");
+      case "insertSibling": return await cmdInsert("sibling");
       case "delete": return await cmdDelete();
       case "copyPath": return cmdCopyPath();
       case "find": return cmdFind();
@@ -922,6 +927,72 @@ async function cmdClone() {
   await api("/api/clone", "POST", { id: state.selected.id });
   await refreshAll();
   status("Node cloned (not saved)");
+}
+
+async function cmdInsert(mode) {
+  if (!state.selected) { alertBox("Insert", "Select an element first."); return; }
+  const targetId = state.selected.id;          // freeze the target while the dialog is open
+  const r = await api(`/api/insert/options?id=${targetId}`);
+  const group = r[mode] || { options: [] };
+  if (!group.options.length) {
+    alertBox("Insert", mode === "child"
+      ? `${r.node.type || r.node.name} has no schema children that can be inserted.`
+      : "No sibling fields are available for this element.");
+    return;
+  }
+  const box = el("div", "flexcol");
+  box.appendChild(el("div", "muted",
+    `${r.node.type || r.node.name}${r.node.name ? " · " + r.node.name : ""} — ` +
+    (mode === "child" ? "insert into the selected element" : "insert next to the selected element")));
+  const row = el("div", "row");
+  row.appendChild(el("label", "", "Field:"));
+  const sel = el("select");
+  group.options.forEach((o, i) => {
+    const opt = el("option", "", o.label + (o.present ? "   (already present)" : ""));
+    opt.value = String(i);
+    if (o.present && !o.repeatable) opt.disabled = true;
+    sel.appendChild(opt);
+  });
+  row.appendChild(sel);
+  box.appendChild(row);
+  const vrow = el("div", "row");
+  vrow.appendChild(el("label", "", "Value:"));
+  const val = el("input");
+  val.type = "text";
+  vrow.appendChild(val);
+  box.appendChild(vrow);
+  const hint = el("div", "muted", "");
+  box.appendChild(hint);
+  const update = () => {
+    const o = group.options[parseInt(sel.value, 10)] || group.options[0];
+    val.disabled = !o.leaf;
+    val.placeholder = o.leaf ? "empty = schema default" : "sequence/list is created empty";
+    hint.textContent = o.leaf
+      ? `Type: ${o.type}${o.alt ? " (alternative " + o.alt + ")" : ""}`
+      : `Type: ${o.type} — insert its children afterwards.`;
+  };
+  sel.onchange = update;
+  update();
+  dialog({
+    title: mode === "child" ? "Insert Child Element" : "Insert Sibling Element",
+    width: 600, content: box,
+    buttons: [
+      { label: "Insert", primary: true, onClick: async () => {
+          const o = group.options[parseInt(sel.value, 10)];
+          if (!o) return false;
+          try {
+            const res = await api("/api/insert", "POST",
+              { target_id: targetId, mode, field: o.field, alt: o.alt, value: val.value });
+            await refreshAll();
+            await revealPath(res.node.path);
+            status(`Inserted ${res.node.name || res.node.type} — highlighted (not saved)`);
+          } catch (err) {
+            alertBox("Insert", String(err.message || err));
+          }
+        } },
+      { label: "Cancel" },
+    ],
+  });
 }
 
 async function cmdDelete() {
@@ -1288,6 +1359,8 @@ function openCtx(x, y) {
   dd.style.left = x + "px"; dd.style.top = y + "px";
   [
     { label: "Edit Value...", cmd: "editValue" },
+    { label: "Insert Child...", cmd: "insertChild" },
+    { label: "Insert Sibling...", cmd: "insertSibling" },
     { label: "Clone Node", cmd: "clone" },
     { label: "Delete Node", cmd: "delete" },
     { sep: true },

@@ -43,7 +43,7 @@ the target machine), a local REST API and a CLI.
 | 解析 | TD.57 ASN.1 模块驱动（TAP3.09 / TAP3.11）；TAP3 release 1–12 文件识别；BER 定长/不定长、CHOICE 线上形态、BCD/数字串/HexString/INTEGER 值语义 |
 | 浏览 | `DataInterChange → transferBatch → batchControlInfo / accountingInfo / networkInfo / messageDescriptionInfo / callEventDetails / auditControlInfo` 导航；ASN.1 树按需展开；选中分组自动全展开 |
 | 数据字典 | 描述 / Derivation / Conditionality / Values 码表 / Validations 表 / ASN.1 Definition / Parent Types，随节点切换 |
-| 编辑 | 值编辑、HEX 写入、克隆、删除；修改字段浅黄高亮；保持当前话单视图；`Ctrl+S` 原地覆盖、不改文件名 |
+| 编辑 | 值编辑、HEX 写入、克隆、删除；**schema 驱动插入子/兄弟节点**（按 SEQUENCE 字段顺序落位、拒绝重复字段）；修改字段浅黄高亮；保持当前话单视图；`Ctrl+S` 原地覆盖、不改文件名 |
 | 校验 | 结构、账务、网络、事件、时间戳、审计勾稽、BCD 语法、重复记录；报告可点击定位 |
 | 统计 | 按事件类型统计条数/金额/时长，并与 `AuditControlInfo.totalCharge` 勾稽 |
 | 文件操作 | 合并（拒绝跨 release）、按记录拆分、CSV/JSON/XML/Listing/统计报表导出 |
@@ -60,6 +60,10 @@ the target machine), a local REST API and a CLI.
 | 分组全展开 | 编辑标记与末条跳转 |
 | --- | --- |
 | ![分组展开](docs/ui-section-expanded.png) | ![编辑标记](docs/ui-edit-highlight.png) |
+
+| 插入子/兄弟节点向导 | 直达最后一条话单 |
+| --- | --- |
+| ![插入](docs/ui-insert-dialog.png) | ![末条](docs/ui-last-call.png) |
 
 ---
 
@@ -208,6 +212,8 @@ CLI `validate` 有 error 时退出码为 1，可直接接入流水线。
 | POST | `/api/tree` | `{id,depth}` 懒加载子树（20k 节点预算） |
 | GET | `/api/node/{id}` | 节点详情（浅层 + 祖先链 + 原始字节） |
 | POST | `/api/value` / `/api/delete` / `/api/clone` | 编辑操作 |
+| GET | `/api/insert/options?id=` | 当前节点可插入的 schema 字段/分支 |
+| POST | `/api/insert` | 按 schema 插入子/兄弟节点 |
 | POST | `/api/save` | 按给定路径原地覆盖（不改名、不补扩展名） |
 | GET/POST | `/api/validate` | 全量校验 |
 | GET | `/api/statistics` | 按类型统计 + 审计勾稽 |
@@ -239,7 +245,7 @@ CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在 push / PR 时运
 
 ## 路线图
 
-- [ ] 插入子/兄弟节点向导（`/api/schema/{type}` + `builder`）
+- [x] 插入子/兄弟节点向导（`/api/insert/options` + `/api/insert`，按 SEQUENCE 顺序落位并拒绝重复字段）
 - [ ] RAP1 / TAP3.12 专用 schema；校验失败自动生成 RAP 返回文件
 - [ ] 原生 TAP3 Listing 列位解析（运营商 `.lis`）
 - [ ] 校验规则配置化（JSON 规则集、阈值、error override）

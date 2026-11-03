@@ -332,6 +332,183 @@ class Tap3Document:
     def is_modified(self, node: ber.BerNode) -> bool:
         return bool(self.modified_paths) and node.path() in self.modified_paths
 
+
+    # ------------------------------------------------------------ insertion
+    def _unwrap(self, t: Optional[Type]) -> Optional[Type]:
+        """Follow aliases and APPLICATION tags down to the structural type."""
+        seen = 0
+        while t is not None and seen < 64:
+            if t.kind == "tagged":
+                t = t.inner
+            elif t.kind == "alias":
+                t = self.module.types.get(t.name) if self.module else None
+            else:
+                return t
+            seen += 1
+        return t
+
+    def _resolved(self, name: str) -> Optional[Type]:
+        if not self.module or not name:
+            return None
+        return self._unwrap(self.module.types.get(name))
+
+    @staticmethod
+    def _type_name_for(t: Type) -> str:
+        if getattr(t, "def_name", ""):
+            return t.def_name
+        if t.kind == "alias":
+            return t.name
+        return t.describe()
+
+    @staticmethod
+    def _present_fields(node: ber.BerNode) -> set:
+        return {c.field_name for c in node.children if c.field_name}
+
+    def _candidates(self, t: Type, present: set) -> dict:
+        out = []
+        if t.kind == "sequence":
+            for fname, ftype, optional in t.fields:
+                base = self._unwrap(ftype)
+                if base.kind == "choice":
+                    for aname, atype in base.alternatives:
+                        abase = self._unwrap(atype)
+                        out.append({
+                            "field": fname, "alt": aname,
+                            "type": self._type_name_for(atype),
+                            "kind": abase.kind,
+                            "leaf": abase.kind in ("primitive", "alias"),
+                            "present": fname in present,
+                            "repeatable": False,
+                            "label": f"{fname} → {aname} : {self._type_name_for(atype)}",
+                        })
+                else:
+                    out.append({
+                        "field": fname, "alt": "",
+                        "type": self._type_name_for(ftype),
+                        "kind": base.kind,
+                        "leaf": base.kind in ("primitive", "alias"),
+                        "present": fname in present,
+                        "repeatable": False,
+                        "label": f"{fname} : {self._type_name_for(ftype)}",
+                    })
+        elif t.kind == "sequence_of":
+            item = t.item
+            ibase = self._unwrap(item)
+            out.append({
+                "field": "item", "alt": "",
+                "type": self._type_name_for(item),
+                "kind": ibase.kind,
+                "leaf": ibase.kind in ("primitive", "alias"),
+                "present": False, "repeatable": True,
+                "label": f"item : {self._type_name_for(item)}",
+            })
+        return {"kind": t.kind, "options": out}
+
+    def insert_options(self, node_id: int) -> dict:
+        node = self.node(node_id)
+        child = {"kind": "", "options": []}
+        t = self._resolved(node.type_name)
+        if t is not None and t.kind in ("sequence", "sequence_of"):
+            child = self._candidates(t, self._present_fields(node))
+        sibling = {"kind": "", "options": []}
+        parent = self.nodes.get(node.parent_id) if node.parent_id else None
+        if parent is not None:
+            pt = self._resolved(parent.type_name)
+            if pt is not None and pt.kind in ("sequence", "sequence_of"):
+                sibling = self._candidates(pt, self._present_fields(parent))
+        return {
+            "node": {"id": node.node_id, "path": node.path(), "type": node.type_name,
+                     "name": node.name, "constructed": node.constructed},
+            "child": child, "sibling": sibling,
+        }
+
+    def _default_for(self, t: Type, value):
+        from . import builder
+        base = self._unwrap(t)
+        type_name = self._type_name_for(t)
+        if base.kind == "sequence":
+            return {}
+        if base.kind == "sequence_of":
+            return []
+        if base.kind == "choice":
+            return None
+        if value not in (None, ""):
+            return value
+        try:
+            v = builder.default_value(self.module, type_name)
+        except Exception:
+            v = ""
+        return "" if v is None else v
+
+    def insert_node(self, target_id: int, mode: str, field: str, alt: str = "",
+                    value: str = "") -> dict:
+        from . import builder
+        if mode not in ("child", "sibling"):
+            raise Tap3Error("mode must be child or sibling")
+        target = self.node(target_id)
+        if mode == "sibling":
+            parent = self.nodes.get(target.parent_id)
+            if parent is None:
+                raise Tap3Error("the document root cannot have siblings")
+        else:
+            parent = target
+        pt = self._resolved(parent.type_name)
+        if pt is None or pt.kind not in ("sequence", "sequence_of"):
+            raise Tap3Error(f"{parent.type_name or 'node'} cannot contain child elements")
+
+        if pt.kind == "sequence_of":
+            item = pt.item
+            type_name = self._type_name_for(item)
+            new = builder.build(self.module, type_name, self._default_for(item, None))
+            if new is None:
+                raise Tap3Error(f"cannot build {type_name}")
+            new.field_name = ""
+            new.name = type_name
+            index = parent.children.index(target) + 1 if mode == "sibling" else len(parent.children)
+        else:
+            fdef = None
+            for fname, ftype, optional in pt.fields:
+                if fname == field:
+                    fdef = (fname, ftype, optional)
+                    break
+            if fdef is None:
+                raise Tap3Error(f"field '{field}' is not part of {parent.type_name}")
+            fname, ftype, optional = fdef
+            if any(c.field_name == fname for c in parent.children):
+                raise Tap3Error(f"field '{fname}' is already present in {parent.type_name}")
+            base = self._unwrap(ftype)
+            if base.kind == "choice":
+                atype = None
+                for aname, candidate in base.alternatives:
+                    if aname == alt:
+                        atype = candidate
+                        break
+                if atype is None:
+                    raise Tap3Error(f"alternative '{alt}' is not part of {fname}")
+                chosen = atype
+            else:
+                chosen = ftype
+            type_name = self._type_name_for(chosen)
+            new = builder.build(self.module, type_name, self._default_for(chosen, value))
+            if new is None:
+                raise Tap3Error(f"cannot build {type_name}")
+            new.field_name = fname
+            new.name = alt or fname
+            order = {f[0]: i for i, f in enumerate(pt.fields)}
+            new_order = order[fname]
+            index = len(parent.children)
+            for i, child in enumerate(parent.children):
+                if child.field_name in order and order[child.field_name] > new_order:
+                    index = i
+                    break
+
+        parent.children.insert(index, new)
+        self.dirty = True
+        self._redecode_annotate()
+        self.mark_modified(parent.path())
+        return {"id": new.node_id, "path": new.path(), "name": new.name,
+                "type": new.type_name, "modified": True}
+
     def find_by_path(self, path: str) -> Optional[ber.BerNode]:
         for n in self.nodes.values():
             if n.path() == path:

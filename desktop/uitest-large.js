@@ -221,6 +221,42 @@ app.whenReady().then(async () => {
       /records: 3883/.test(statusBar) && /charge: .*USD/.test(statusBar) &&
       !/records: 3883 USD/.test(statusBar), statusBar);
 
+    /* ---------------- schema-driven insertion ---------------- */
+    const ins = await evalJs(`(async () => {
+      const ev = state.nav.children.find(c => c.kind === 'events');
+      await setMainRoot(ev.items[0].id);
+      const row = Array.from(state.rows.entries()).find(([id, r]) => r.dataset.name === 'ChargeDetail');
+      await selectNode(row[0], row[1]);
+      await runCommand('insertChild');
+      const dlg = document.querySelector('#modalLayer');
+      const open = dlg.classList.contains('on');
+      const sel = dlg.querySelector('select');
+      const options = Array.from(sel.options);
+      const usable = options.filter(o => !o.disabled);
+      let inserted = null;
+      if (usable.length) {
+        sel.value = usable[0].value;
+        sel.onchange();
+        const val = dlg.querySelector('input[type=text]');
+        if (!val.disabled) val.value = '20240101120000';
+        Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+          .find(b => b.textContent.trim() === 'Insert').click();
+        await new Promise(r => setTimeout(r, 1500));
+        inserted = { modified: document.querySelectorAll('#mainTree .trow.modified').length,
+                     modal: document.querySelector('#modalLayer').classList.contains('on'),
+                     status: document.querySelector('#statusText').textContent };
+      } else {
+        Array.from(dlg.querySelectorAll('.dlg-buttons button'))
+          .find(b => b.textContent.trim() === 'Cancel').click();
+      }
+      return { open, options: options.length, usable: usable.length, inserted };
+    })()`);
+    check("insert dialog lists schema fields", ins.open && ins.options >= 4,
+      JSON.stringify({ open: ins.open, options: ins.options }));
+    check("insert child works and is highlighted",
+      !ins.inserted || (ins.inserted.modified >= 1 && !ins.inserted.modal),
+      JSON.stringify(ins.inserted || {}));
+
     const tmp = path.join(os.tmpdir(), "roaming_studio_uitest_large.tap3");
     const save = await evalJs(`(async () => {
       const r = await api('/api/save', 'POST', { path: ${JSON.stringify(tmp)} });

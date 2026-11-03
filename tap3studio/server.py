@@ -68,6 +68,14 @@ class MergeReq(BaseModel):
     out: str
 
 
+class InsertReq(BaseModel):
+    target_id: int
+    mode: str = "child"
+    field: str
+    alt: str = ""
+    value: str = ""
+
+
 class SplitReq(BaseModel):
     out_prefix: str
     chunk: int = 1000
@@ -176,6 +184,25 @@ def set_value(req: ValueReq):
     except tapfile.Tap3Error as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {"ok": True, "dirty": doc.dirty, "header": doc.header()}
+
+
+@app.get("/api/insert/options")
+def insert_options(id: int):
+    doc = _doc()
+    try:
+        return doc.insert_options(id)
+    except tapfile.Tap3Error as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/api/insert")
+def insert_node(req: InsertReq):
+    doc = _doc()
+    try:
+        result = doc.insert_node(req.target_id, req.mode, req.field, req.alt, req.value)
+    except tapfile.Tap3Error as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"ok": True, "node": result, "modified": len(doc.modified_paths)}
 
 
 @app.post("/api/delete")

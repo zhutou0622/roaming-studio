@@ -59,6 +59,17 @@ app.whenReady().then(async () => {
     await evalJs(`(async () => { await runCommand('statistics'); return true; })()`);
     await sleep(400);
     await shoot("ui-statistics.png");
+
+    await evalJs(`(() => { closeModal(); return true; })()`);
+    await evalJs(`(async () => {
+      const ev = state.nav.children.find(c => c.kind === 'events');
+      await setMainRoot(ev.items[0].id);
+      const row = Array.from(state.rows.entries()).find(([id, r]) => r.dataset.name === 'ChargeDetail');
+      await selectNode(row[0], row[1]);
+      await runCommand('insertChild');
+      return true; })()`);
+    await sleep(500);
+    await shoot("ui-insert-dialog.png");
   } catch (err) {
     console.error("shot-dialogs failed:", err);
     process.exitCode = 1;
